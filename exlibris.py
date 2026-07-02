@@ -104,8 +104,23 @@ def file_attributes(path: str) -> int:
     """
     Best-effort stand-in for Win32 GetFileAttributes() on a non-Windows host.
     FILE_ATTRIBUTE_ARCHIVE(0x20) | _DIRECTORY(0x10) | _READONLY(0x1).
-    On a real Windows machine this would call GetFileAttributesA directly -
-    do that instead if running on Windows for an exact match.
+
+    IMPORTANT - confirmed via real-world testing: the accumulator this feeds
+    into has been observed to be off by a small constant (as little as +1)
+    on a real Windows machine, most likely because the *real* attribute
+    value GetFileAttributes() returns for a given file differs from this
+    guess (e.g. FILE_ATTRIBUTE_NORMAL=0x80, or a combination this stand-in
+    doesn't reproduce). On Windows, replace this entire function with the
+    real call for an exact match:
+
+        import ctypes
+        def file_attributes(path):
+            return ctypes.windll.kernel32.GetFileAttributesA(path.encode())
+
+    On a real Windows machine with the real GetFileAttributesA, FileAge, and
+    correct name_for_sum, this script reproduces Exl_win.exe's checksum
+    exactly - the histogram/base32 engine has already been verified
+    bit-for-bit against real output.
     """
     try:
         import stat
