@@ -144,6 +144,48 @@ def file_age_dos(path: str) -> int:
     return file_age_dos_from_mtime(os.path.getmtime(path))
 
 
+def debug_attributes_source(path: str) -> None:
+    """
+    Report whether file_attributes() actually used the real Win32 API or
+    fell back to the Unix-stat guess, and what each would individually
+    return - to distinguish "API succeeded with value X" from "API failed,
+    fallback happened to also compute X" (which look identical from the
+    final number alone).
+    """
+    abs_path = os.path.abspath(path)
+    api_result = None
+    api_error = None
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        kernel32.GetFileAttributesA.restype = ctypes.c_uint32
+        kernel32.GetFileAttributesA.argtypes = [ctypes.c_char_p]
+        api_result = kernel32.GetFileAttributesA(abs_path.encode("mbcs", errors="replace"))
+        if api_result == 0xFFFFFFFF:
+            api_error = "INVALID_FILE_ATTRIBUTES (call failed)"
+            api_result = None
+    except Exception as e:
+        api_error = f"{type(e).__name__}: {e}"
+
+    fallback_result = None
+    try:
+        import stat
+        st = os.stat(path)
+        attr = 0x20
+        if stat.S_ISDIR(st.st_mode):
+            attr |= 0x10
+        if not (st.st_mode & 0o200):
+            attr |= 0x01
+        fallback_result = attr
+    except OSError as e:
+        fallback_result = f"error: {e}"
+
+    print(f"abs_path        = {abs_path!r}")
+    print(f"real API result = {api_result}  (0x{api_result:08X})" if api_result is not None else f"real API result = FAILED ({api_error})")
+    print(f"fallback result = {fallback_result}  (0x{fallback_result:08X})" if isinstance(fallback_result, int) else f"fallback result = {fallback_result}")
+    print(f"actually used   = {'REAL API' if api_result is not None else 'FALLBACK GUESS'}")
+
+
 def file_attributes(path: str) -> int:
     """
     Get Win32 file attributes for `path`.
@@ -162,8 +204,15 @@ def file_attributes(path: str) -> int:
     """
     try:
         import ctypes
-        result = ctypes.windll.kernel32.GetFileAttributesA(path.encode("mbcs", errors="replace"))
-        if result != 0xFFFFFFFF:  # INVALID_FILE_ATTRIBUTES
+        kernel32 = ctypes.windll.kernel32
+        kernel32.GetFileAttributesA.restype = ctypes.c_uint32
+        kernel32.GetFileAttributesA.argtypes = [ctypes.c_char_p]
+        # Use the absolute path - GetFileAttributesA resolves relative paths
+        # against the process's current directory, which should match here,
+        # but being explicit avoids any ambiguity.
+        abs_path = os.path.abspath(path)
+        result = kernel32.GetFileAttributesA(abs_path.encode("mbcs", errors="replace"))
+        if result != 0xFFFFFFFF:  # INVALID_FILE_ATTRIBUTES, now compared correctly as unsigned
             return result
     except (AttributeError, OSError, UnicodeError):
         pass  # not on Windows, or the call failed - fall through to the guess
