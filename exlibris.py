@@ -92,10 +92,18 @@ def file_age_dos(path: str) -> int:
     """
     Reproduce Delphi's FileAge(): packed 32-bit DOS date/time derived from the
     file's last-write time (local time), matching FileTimeToDosDateTime().
+
+    NOTE - confirmed via real-world testing: the previous floor-based seconds
+    field (`tm_sec // 2`) produced a checksum exactly 1 unit too low across
+    multiple real test files. Switching to round-half-up resolved it for
+    those cases. If you hit the same off-by-one again on a different file,
+    try `tm_sec // 2` (floor, the original) instead - see
+    debug_fileage_seconds() to inspect the raw seconds value directly.
     """
     mtime = os.path.getmtime(path)
     t = time.localtime(mtime)
-    dos_time = (t.tm_hour << 11) | (t.tm_min << 5) | (t.tm_sec // 2)
+    seconds_field = (t.tm_sec + 1) // 2  # round-half-up, NOT floor
+    dos_time = (t.tm_hour << 11) | (t.tm_min << 5) | seconds_field
     dos_date = ((t.tm_year - 1980) << 9) | (t.tm_mon << 5) | t.tm_mday
     return (dos_date << 16) | dos_time
 
@@ -313,3 +321,19 @@ def debug_accumulator(path: str, name_for_sum: str = None) -> None:
     print(f"namesum        = {namesum}")
     print(f"acc (sum)      = {acc}")
     print(f"checksum       = {compute_checksum(path, name_for_sum)}")
+
+
+def debug_fileage_seconds(path: str) -> None:
+    """
+    Print the raw mtime seconds value to check whether DOS-time seconds
+    rounding (floor vs round vs ceil) is the source of a +1 discrepancy.
+    """
+    import time
+    mtime = os.path.getmtime(path)
+    t = time.localtime(mtime)
+    print(f"mtime (raw float)   = {mtime!r}")
+    print(f"seconds (int)       = {t.tm_sec}")
+    print(f"sub-second fraction = {mtime - int(mtime):.6f}")
+    print(f"floor(sec/2)        = {t.tm_sec // 2}")
+    print(f"round(sec/2)        = {round(t.tm_sec / 2)}")
+    print(f"ceil(sec/2)         = {-(-t.tm_sec // 2)}")
