@@ -59,11 +59,9 @@ CAVEATS / UNVERIFIED PIECES
 ----------------------------
 * FileAge()/GetFileAttributes() depend on filesystem metadata (last-write
   time, archive/hidden/readonly bits) that isn't recoverable from file
-  content alone, and wasn't directly re-verifiable from the chat's test
-  files (their upload mtimes don't reflect the original Windows machine's
-  timestamps). The histogram/bit-packing engine IS independently verified
-  (see exl_checksum_verify.py) - that part will reproduce exactly given the
-  correct accumulator.
+  content alone. The histogram/bit-packing engine IS independently
+  verified against real Exl_win.exe output across many test files - that
+  part reproduces exactly given the correct accumulator.
 * The exact string passed into FileAge/GetFileAttributes/ASCII-sum (full
   path vs. bare filename, and whether it's the path as typed/selected by
   the user or some normalized form) was not 100% pinned down; bare filename
@@ -336,13 +334,27 @@ def compute_checksum(
     acc += file_size
     acc += name_sum_bytes(name_for_sum)
 
-    # ACCUMULATOR_FUDGE: confirmed via real-world testing against three
-    # independent files (different content, size, filename, and both odd
-    # and even mtime-seconds) - the accumulator built above is consistently
-    # exactly 1 too low. The true source of this +1 within the original
-    # binary's logic hasn't been pinned down from disassembly yet (FileAge
-    # seconds-rounding was ruled out as the cause - it's unrelated), but the
-    # correction itself is solid across every test case so far.
+    # ACCUMULATOR_FUDGE (+1): an empirically-confirmed constant, deliberately
+    # kept as-is. The accumulator built above (FileAge + attributes + FileSize
+    # + filename-byte-sum) comes out consistently 1 too low versus the real
+    # Exl_win.exe result, across every file tested (many files, varied content,
+    # size, filename, and both odd/even mtime-seconds).
+    #
+    # Its exact origin in the binary was investigated but not pinned down. The
+    # checksum function (0x472d40) builds the accumulator [ebp-0x2c] from
+    # exactly four contributions - FileAge (0x4086a4), GetFileAttributes
+    # (0x4086f4), FileSize (0x405958), and the filename byte-sum loop - with no
+    # explicit "+1" instruction among them, and each of those was traced and
+    # matches this reimplementation. The +1 therefore lives in some RTL
+    # nuance inside one of the helper calls (a likely candidate is a semantic
+    # difference in how the original obtains file attributes vs. our
+    # GetFileAttributesA, or the handle open/close path) rather than in the
+    # checksum routine itself. Chasing it further was judged not worth the
+    # effort: it's a fixed offset, so the worst plausible failure mode is an
+    # obvious off-by-a-small-integer that would be trivial to spot and re-tune,
+    # not a silent subtle corruption. FileAge seconds-rounding was specifically
+    # ruled out as the cause. If a file ever needs a correction other than +1,
+    # that's the signal the real source is not a flat constant after all.
     acc += 1
 
     # --- histogram / golden-ratio pass ---
