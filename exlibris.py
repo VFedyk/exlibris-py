@@ -311,9 +311,16 @@ def compute_checksum(
         name_for_sum = os.path.basename(path)
 
     if file_size is None:
-        file_size = os.path.getsize(path)  # N - confirmed via real-world test against
-                                            # Exl_win.exe output: this is FileSize directly,
-                                            # NOT FileSize // 128 as an earlier draft assumed.
+        file_size = os.path.getsize(path)  # N (the histogram's golden-ratio variable).
+        # This is the RAW byte count, confirmed both empirically AND now from the
+        # disassembly. The stream's Size() method (0x405958) computes
+        # FileSizeInBytes / [obj+0x8], where [obj+0x8] is a record-size field.
+        # The constructor (0x405816) sets that field to 128, which briefly made
+        # it look like Size() returns FileSize/128 - but the file-open call
+        # (0x405ae9) that runs *between* construction and the Size() read
+        # overwrites the field with 1 (byte-granular record size). So Size()
+        # returns FileSize / 1 = FileSize. An earlier draft stopped the trace at
+        # the constructor and missed that intervening overwrite.
 
     acc = 0
     if file_age is not None:
