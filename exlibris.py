@@ -223,19 +223,19 @@ def compute_checksum(path: str, name_for_sum: str = None) -> str:
     acc += 1
 
     # --- histogram / golden-ratio pass ---
+    # Confirmed via real-world testing against three files >65535 bytes: the
+    # ENTIRE file is processed, not just the first 65535 bytes. An earlier
+    # draft assumed a single TFileStream.Read(buf, 0xFFFF) call capped the
+    # data seen by this loop - that 0xFFFF really is the request size of one
+    # Read() call, but the real code evidently loops until EOF (processing
+    # the file in 65535-byte chunks) rather than stopping after one read.
+    # N = file_size throughout, matching every verified test file regardless
+    # of size.
     with open(path, "rb") as f:
-        data = f.read(READ_LIMIT)
+        data = f.read()
 
     bytes_read = len(data)
-
-    # N: confirmed via real-world testing against small files (<=23KB) that
-    # N must equal the byte count actually processed by this loop, NOT
-    # file_size // 128 (an earlier disassembly read that turned out to
-    # produce wrong results for every real test case). For files under the
-    # 65535-byte read cap, bytes_read == file_size, so this matches what was
-    # verified. For larger files this still needs final confirmation against
-    # a known-large-file checksum.
-    N = bytes_read
+    N = file_size
     P = delphi_round(N * GOLDEN)
     histogram = [0.0] * NUM_BUCKETS
 
@@ -355,17 +355,21 @@ def debug_fileage_seconds(path: str) -> None:
 
 def debug_N_hypotheses(path: str, name_for_sum: str = None) -> None:
     """
-    Compute the checksum under four different hypotheses for what N (the
-    golden-ratio histogram variable) actually is, to determine empirically
-    which one matches real Exl_win.exe output for large files (>65535 bytes).
+    Compute the checksum under several different hypotheses for what N (the
+    golden-ratio histogram variable) and the read range actually are, to
+    determine empirically which one matches real Exl_win.exe output for
+    large files (>65535 bytes).
     """
     if name_for_sum is None:
         name_for_sum = os.path.basename(path)
 
     file_size = os.path.getsize(path)
     with open(path, "rb") as f:
-        data = f.read(READ_LIMIT)
-    bytes_read = len(data)
+        capped_data = f.read(READ_LIMIT)
+    bytes_read = len(capped_data)
+
+    with open(path, "rb") as f:
+        full_data = f.read()
 
     acc = 0
     if os.path.exists(path):
@@ -375,10 +379,10 @@ def debug_N_hypotheses(path: str, name_for_sum: str = None) -> None:
     acc += sum(ord(c) for c in name_for_sum)
     acc += 1  # the confirmed universal fudge
 
-    def hist_sum_for_N(N):
+    def hist_sum_for(data, N):
         P = delphi_round(N * GOLDEN)
         histogram = [0.0] * NUM_BUCKETS
-        for i in range(1, bytes_read + 1):
+        for i in range(1, len(data) + 1):
             b = data[i - 1]
             bucket = delphi_round(b * PI_OVER_128 / HAND_PI_OVER_180)
             bucket = max(0, min(NUM_BUCKETS - 1, bucket))
@@ -391,16 +395,17 @@ def debug_N_hypotheses(path: str, name_for_sum: str = None) -> None:
         return sum(histogram[k] * (2 * k + 1) for k in range(NUM_BUCKETS))
 
     hypotheses = {
-        "N=bytes_read": bytes_read,
-        "N=file_size": file_size,
-        "N=file_size//128": file_size // 128,
-        "N=bytes_read//128": bytes_read // 128,
+        "N=bytes_read(capped@65535)": (capped_data, bytes_read),
+        "N=file_size(capped read)": (capped_data, file_size),
+        "N=file_size//128(capped read)": (capped_data, file_size // 128),
+        "N=bytes_read//128(capped read)": (capped_data, bytes_read // 128),
+        "N=file_size(FULL file read)": (full_data, file_size),
     }
 
     print(f"file_size={file_size}  bytes_read(capped)={bytes_read}  acc(integer part)={acc}")
     print()
-    for label, N in hypotheses.items():
-        h = hist_sum_for_N(N)
+    for label, (data, N) in hypotheses.items():
+        h = hist_sum_for(data, N)
         acc_float = float(acc) + h
         s = borland_str_extended(acc_float)
         digits = s[7:17]
@@ -409,4 +414,4 @@ def debug_N_hypotheses(path: str, name_for_sum: str = None) -> None:
             cs = enc[:4] + "-" + enc[4:]
         else:
             cs = f"(non-digit window: {s!r})"
-        print(f"{label:25s} N={N:8d}  hist_sum={h:15.4f}  checksum={cs}")
+        print(f"{label:35s} N={N:8d}  hist_sum={h:15.4f}  checksum={cs}")
