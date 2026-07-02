@@ -288,3 +288,28 @@ def calibrate_accumulator_constant(known_checksum: str, file_size: int, filename
         return pack_digits_to_base32(digits)
 
     return quick_check
+
+
+def debug_accumulator(path: str, name_for_sum: str = None) -> None:
+    """
+    Print every intermediate value feeding the accumulator, for diagnosing
+    mismatches against real Exl_win.exe output. Run this on Windows with the
+    real file_attributes() (ctypes GetFileAttributesA) wired in.
+    """
+    if name_for_sum is None:
+        name_for_sum = os.path.basename(path)
+
+    file_size = os.path.getsize(path)
+    age = file_age_dos(path) if os.path.exists(path) else 0
+    attrs = file_attributes(path)
+    namesum = sum(ord(c) for c in name_for_sum)
+    acc = age + attrs + file_size + namesum
+
+    print(f"path           = {path!r}")
+    print(f"name_for_sum   = {name_for_sum!r}")
+    print(f"file_size      = {file_size}")
+    print(f"file_age_dos   = {age}  (0x{age:08X})")
+    print(f"file_attributes= {attrs}  (0x{attrs:08X})")
+    print(f"namesum        = {namesum}")
+    print(f"acc (sum)      = {acc}")
+    print(f"checksum       = {compute_checksum(path, name_for_sum)}")
