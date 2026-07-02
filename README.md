@@ -151,3 +151,26 @@ Or from the command line:
 ```bash
 uv run python -c "from exlibrys import debug_accumulator; debug_accumulator('file.txt')"
 ```
+
+## Development
+
+Install with dev dependencies and run the test suite:
+
+```bash
+uv pip install -e ".[dev]"
+pytest
+```
+
+The test suite (`tests/test_exlibrys.py`) covers:
+
+- Full checksum matches against real, previously-confirmed `Exl_win.exe`
+  output (content + explicit FileAge/attributes together).
+- Content-only matches for larger synthetic fixtures, regenerated
+  deterministically from a fixed seed.
+- A regression test confirming the entire file is processed rather than
+  capped at 65535 bytes (a real bug caught during reconstruction).
+- Unit tests for the individual building blocks: filename byte-summing
+  (including the cp1251 Cyrillic case), base32 packing, the Borland
+  `Str(Extended)` float formatter, DOS date/time packing, and CLI argument
+  parsing/error handling.
+
