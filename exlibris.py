@@ -108,10 +108,30 @@ def name_sum_bytes(name: str) -> int:
     return sum(encoded)
 
 
+def file_age_dos_from_mtime(mtime: float) -> int:
+    """
+    Pack a Unix timestamp (seconds since epoch, as from os.path.getmtime())
+    into Delphi's FileAge() format: 32-bit DOS date/time, matching
+    FileTimeToDosDateTime() (local time).
+    """
+    t = time.localtime(mtime)
+    dos_time = (t.tm_hour << 11) | (t.tm_min << 5) | (t.tm_sec // 2)
+    dos_date = ((t.tm_year - 1980) << 9) | (t.tm_mon << 5) | t.tm_mday
+    return (dos_date << 16) | dos_time
+
+
 def file_age_dos(path: str) -> int:
     """
-    Reproduce Delphi's FileAge(): packed 32-bit DOS date/time derived from the
-    file's last-write time (local time), matching FileTimeToDosDateTime().
+    Reproduce Delphi's FileAge() from a file's real last-write time. Works
+    identically on any OS Python runs on (it's just os.path.getmtime()), but
+    is only GUARANTEED to match what Exl_win.exe itself would compute if the
+    file's mtime, as seen by this process, is the genuine Windows last-write
+    time - e.g. the file lives on a real NTFS volume (including via WSL's
+    /mnt/c/...), or was copied in a way that explicitly preserved mtime.
+    Files that have been re-saved, re-uploaded, freshly created, or copied
+    by a tool that resets timestamps will NOT reproduce the original
+    checksum via this function - use --file-age to supply the real value
+    directly in that case (see CLI --help).
 
     NOTE: an earlier draft rounded the seconds field up instead of flooring
     it, based on two test files that happened to need +1. A third test file
@@ -121,35 +141,33 @@ def file_age_dos(path: str) -> int:
     behaviour) - see compute_checksum()'s ACCUMULATOR_FUDGE for the actual
     confirmed, universal correction.
     """
-    mtime = os.path.getmtime(path)
-    t = time.localtime(mtime)
-    dos_time = (t.tm_hour << 11) | (t.tm_min << 5) | (t.tm_sec // 2)
-    dos_date = ((t.tm_year - 1980) << 9) | (t.tm_mon << 5) | t.tm_mday
-    return (dos_date << 16) | dos_time
+    return file_age_dos_from_mtime(os.path.getmtime(path))
 
 
 def file_attributes(path: str) -> int:
     """
-    Best-effort stand-in for Win32 GetFileAttributes() on a non-Windows host.
-    FILE_ATTRIBUTE_ARCHIVE(0x20) | _DIRECTORY(0x10) | _READONLY(0x1).
+    Get Win32 file attributes for `path`.
 
-    IMPORTANT - confirmed via real-world testing: the accumulator this feeds
-    into has been observed to be off by a small constant (as little as +1)
-    on a real Windows machine, most likely because the *real* attribute
-    value GetFileAttributes() returns for a given file differs from this
-    guess (e.g. FILE_ATTRIBUTE_NORMAL=0x80, or a combination this stand-in
-    doesn't reproduce). On Windows, replace this entire function with the
-    real call for an exact match:
+    On real Windows: calls the actual GetFileAttributesA - exact, no
+    approximation needed.
 
-        import ctypes
-        def file_attributes(path):
-            return ctypes.windll.kernel32.GetFileAttributesA(path.encode())
-
-    On a real Windows machine with the real GetFileAttributesA, FileAge, and
-    correct name_for_sum, this script reproduces Exl_win.exe's checksum
-    exactly - the histogram/base32 engine has already been verified
-    bit-for-bit against real output.
+    On non-Windows (Linux/macOS) or if the API call fails for any reason:
+    falls back to a best-effort guess from Unix stat() bits
+    (FILE_ATTRIBUTE_ARCHIVE | _DIRECTORY | _READONLY). This fallback is NOT
+    guaranteed to match the real Windows value - Windows attribute bits
+    (hidden, system, archive) don't have a clean Unix equivalent. Use
+    --attributes on the CLI to supply the real value directly if you know it
+    (e.g. by checking the file's properties on the original Windows machine,
+    or via a WSL-mounted NTFS path where the real API can be reached).
     """
+    try:
+        import ctypes
+        result = ctypes.windll.kernel32.GetFileAttributesA(path.encode("mbcs", errors="replace"))
+        if result != 0xFFFFFFFF:  # INVALID_FILE_ATTRIBUTES
+            return result
+    except (AttributeError, OSError, UnicodeError):
+        pass  # not on Windows, or the call failed - fall through to the guess
+
     try:
         import stat
         st = os.stat(path)
@@ -210,26 +228,55 @@ def delphi_round(x: float) -> int:
     return round(x)
 
 
-def compute_checksum(path: str, name_for_sum: str = None) -> str:
+def compute_checksum(
+    path: str,
+    name_for_sum: str = None,
+    file_age: int = None,
+    attributes: int = None,
+    file_size: int = None,
+) -> str:
     """
     Compute the Exl_win.exe-style checksum for the file at `path`.
 
-    name_for_sum: the string whose ASCII codes get summed into the
-    accumulator. Defaults to os.path.basename(path); pass a different value
-    (e.g. a full Windows path string) if you need to match a specific
-    original invocation - see CAVEATS in the module docstring.
+    All metadata inputs can be overridden explicitly, which is what makes
+    this usable cross-platform: on real Windows the defaults (real
+    GetFileAttributesA, real FileAge from mtime) are exact. On Linux/macOS,
+    or for a file whose original Windows metadata you know from elsewhere
+    (e.g. you read it off the source machine before copying), pass the real
+    values in directly instead of relying on the fallback guesses.
+
+    name_for_sum: the string whose byte values (Windows-1251 encoded) get
+        summed into the accumulator. Defaults to os.path.basename(path).
+    file_age: pre-packed Delphi FileAge() value (32-bit DOS date/time). If
+        None, computed from the file's actual mtime via file_age_dos().
+        Use file_age_dos_from_mtime() to pack a known Unix timestamp, or
+        pass the raw DOS-packed integer directly if you have it.
+    attributes: Win32 file attributes integer. If None, uses the real
+        GetFileAttributesA on Windows, or a best-effort Unix-stat-based
+        guess otherwise (see file_attributes() docstring for caveats).
+    file_size: file size in bytes. If None, uses os.path.getsize(path).
+        Override only if you're computing a checksum for content that isn't
+        literally on disk at `path` in its original form.
     """
     if name_for_sum is None:
         name_for_sum = os.path.basename(path)
 
-    file_size = os.path.getsize(path)  # N - confirmed via real-world test against
-                                        # Exl_win.exe output: this is FileSize directly,
-                                        # NOT FileSize // 128 as an earlier draft assumed.
+    if file_size is None:
+        file_size = os.path.getsize(path)  # N - confirmed via real-world test against
+                                            # Exl_win.exe output: this is FileSize directly,
+                                            # NOT FileSize // 128 as an earlier draft assumed.
 
     acc = 0
-    if os.path.exists(path):
+    if file_age is not None:
+        acc += file_age
+    elif os.path.exists(path):
         acc += file_age_dos(path)
-    acc += file_attributes(path)
+
+    if attributes is not None:
+        acc += attributes
+    else:
+        acc += file_attributes(path)
+
     acc += file_size
     acc += name_sum_bytes(name_for_sum)
 
@@ -295,10 +342,109 @@ def compute_checksum(path: str, name_for_sum: str = None) -> str:
     return checksum
 
 
+def _parse_datetime_to_dos(s: str) -> int:
+    """Parse a human-readable datetime string into a packed DOS FileAge value."""
+    import datetime
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            dt = datetime.datetime.strptime(s, fmt)
+            return file_age_dos_from_mtime(dt.timestamp())
+        except ValueError:
+            continue
+    raise ValueError(
+        f"Could not parse '{s}' as a datetime. Use 'YYYY-MM-DD HH:MM:SS' "
+        f"(or a bare integer for a raw packed DOS FileAge value)."
+    )
+
+
+def _parse_int_auto(s: str) -> int:
+    """Accept a plain int, or 0x-prefixed hex, for --attributes / --file-age."""
+    s = s.strip()
+    if s.lower().startswith("0x"):
+        return int(s, 16)
+    return int(s)
+
+
+def main(argv=None):
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Compute Exl_win.exe-style checksums for one or more files.",
+        epilog=(
+            "Cross-platform notes:\n"
+            "  On real Windows, file metadata (timestamp, attributes) is read via\n"
+            "  the real Win32 APIs automatically - no overrides needed.\n"
+            "  On Linux/macOS, or for a file whose ORIGINAL Windows metadata you\n"
+            "  know from elsewhere, supply it explicitly:\n\n"
+            "    --file-age \"2024-06-15 14:30:22\"   (human-readable local time)\n"
+            "    --file-age 1558028784                (raw packed DOS FileAge int)\n"
+            "    --attributes 0x20                    (Win32 attributes, hex or decimal)\n"
+            "    --name \"original-filename.docx\"      (overrides the basename used\n"
+            "                                           in the checksum's name-sum term)\n\n"
+            "  Without these, results on non-Windows hosts will only match the real\n"
+            "  Exl_win.exe output by coincidence - see file_attributes()/file_age_dos()\n"
+            "  docstrings for exactly what's being approximated and why."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("paths", nargs="+", help="File(s) to checksum.")
+    parser.add_argument(
+        "--name", dest="name_for_sum", default=None,
+        help="Filename string to use in the name-sum term (default: basename of each path). "
+             "Use this if the file was renamed and you need to match the checksum under its "
+             "original Windows filename.",
+    )
+    parser.add_argument(
+        "--file-age", dest="file_age", default=None, type=str,
+        help="Override the FileAge value: either a human-readable datetime "
+             "('2024-06-15 14:30:22', local time) or a raw packed DOS FileAge "
+             "integer (decimal or 0x-prefixed hex). Applies to ALL paths given.",
+    )
+    parser.add_argument(
+        "--attributes", dest="attributes", default=None, type=str,
+        help="Override the Win32 file attributes value (decimal or 0x-prefixed hex, "
+             "e.g. 0x20 for FILE_ATTRIBUTE_ARCHIVE). Applies to ALL paths given.",
+    )
+    parser.add_argument(
+        "--file-size", dest="file_size", default=None, type=int,
+        help="Override the file size in bytes (rarely needed; default: actual size on disk). "
+             "Applies to ALL paths given - only useful with a single path.",
+    )
+    args = parser.parse_args(argv)
+
+    file_age = None
+    if args.file_age is not None:
+        try:
+            file_age = _parse_int_auto(args.file_age)
+        except ValueError:
+            try:
+                file_age = _parse_datetime_to_dos(args.file_age)
+            except ValueError as e:
+                parser.error(str(e))
+
+    attributes = None
+    if args.attributes is not None:
+        try:
+            attributes = _parse_int_auto(args.attributes)
+        except ValueError:
+            parser.error(f"--attributes value '{args.attributes}' is not a valid integer (decimal or 0x-hex).")
+
+    for p in args.paths:
+        try:
+            result = compute_checksum(
+                p,
+                name_for_sum=args.name_for_sum,
+                file_age=file_age,
+                attributes=attributes,
+                file_size=args.file_size,
+            )
+            print(f"{p}: {result}")
+        except Exception as e:
+            print(f"{p}: ERROR - {e}")
+
+
 if __name__ == "__main__":
-    import sys
-    for p in sys.argv[1:]:
-        print(f"{p}: {compute_checksum(p)}")
+    main()
 
 
 def calibrate_accumulator_constant(known_checksum: str, file_size: int, filename: str):
