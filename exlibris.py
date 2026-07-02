@@ -228,11 +228,13 @@ def compute_checksum(path: str, name_for_sum: str = None) -> str:
 
     bytes_read = len(data)
 
-    # N is the number of bytes actually read by TFileStream.Read (capped at
-    # READ_LIMIT=65535), NOT the full file_size. For files <= 65535 bytes
-    # these are identical, which is why this distinction was invisible in
-    # every test file used so far (largest verified match was 23KB). Confirmed
-    # necessary once a file >65535 bytes was tested.
+    # N: confirmed via real-world testing against small files (<=23KB) that
+    # N must equal the byte count actually processed by this loop, NOT
+    # file_size // 128 (an earlier disassembly read that turned out to
+    # produce wrong results for every real test case). For files under the
+    # 65535-byte read cap, bytes_read == file_size, so this matches what was
+    # verified. For larger files this still needs final confirmation against
+    # a known-large-file checksum.
     N = bytes_read
     P = delphi_round(N * GOLDEN)
     histogram = [0.0] * NUM_BUCKETS
@@ -349,3 +351,62 @@ def debug_fileage_seconds(path: str) -> None:
     print(f"floor(sec/2)        = {t.tm_sec // 2}")
     print(f"round(sec/2)        = {round(t.tm_sec / 2)}")
     print(f"ceil(sec/2)         = {-(-t.tm_sec // 2)}")
+
+
+def debug_N_hypotheses(path: str, name_for_sum: str = None) -> None:
+    """
+    Compute the checksum under four different hypotheses for what N (the
+    golden-ratio histogram variable) actually is, to determine empirically
+    which one matches real Exl_win.exe output for large files (>65535 bytes).
+    """
+    if name_for_sum is None:
+        name_for_sum = os.path.basename(path)
+
+    file_size = os.path.getsize(path)
+    with open(path, "rb") as f:
+        data = f.read(READ_LIMIT)
+    bytes_read = len(data)
+
+    acc = 0
+    if os.path.exists(path):
+        acc += file_age_dos(path)
+    acc += file_attributes(path)
+    acc += file_size
+    acc += sum(ord(c) for c in name_for_sum)
+    acc += 1  # the confirmed universal fudge
+
+    def hist_sum_for_N(N):
+        P = delphi_round(N * GOLDEN)
+        histogram = [0.0] * NUM_BUCKETS
+        for i in range(1, bytes_read + 1):
+            b = data[i - 1]
+            bucket = delphi_round(b * PI_OVER_128 / HAND_PI_OVER_180)
+            bucket = max(0, min(NUM_BUCKETS - 1, bucket))
+            if P != 0 and i <= P:
+                weight = (i * GOLDEN_COMPLEMENT) / P
+            else:
+                denom = (N - P + 1)
+                weight = ((N - i + 1) * GOLDEN_COMPLEMENT) / denom if denom != 0 else 0.0
+            histogram[bucket] += weight
+        return sum(histogram[k] * (2 * k + 1) for k in range(NUM_BUCKETS))
+
+    hypotheses = {
+        "N=bytes_read": bytes_read,
+        "N=file_size": file_size,
+        "N=file_size//128": file_size // 128,
+        "N=bytes_read//128": bytes_read // 128,
+    }
+
+    print(f"file_size={file_size}  bytes_read(capped)={bytes_read}  acc(integer part)={acc}")
+    print()
+    for label, N in hypotheses.items():
+        h = hist_sum_for_N(N)
+        acc_float = float(acc) + h
+        s = borland_str_extended(acc_float)
+        digits = s[7:17]
+        if digits.isdigit():
+            enc = pack_digits_to_base32(digits)
+            cs = enc[:4] + "-" + enc[4:]
+        else:
+            cs = f"(non-digit window: {s!r})"
+        print(f"{label:25s} N={N:8d}  hist_sum={h:15.4f}  checksum={cs}")
