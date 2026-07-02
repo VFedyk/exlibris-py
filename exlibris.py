@@ -88,6 +88,26 @@ NUM_BUCKETS = 360
 READ_LIMIT = 0xFFFF  # 65535 bytes max read by the histogram pass
 
 
+def name_sum_bytes(name: str) -> int:
+    """
+    Sum of the filename's BYTE values as the real Win32 ANSI application
+    would see them - NOT Python's raw Unicode ord() values. Confirmed via
+    real-world testing: a Cyrillic filename summed via plain ord() (full
+    Unicode codepoints, e.g. 1072 for 'а') produced a wildly wrong
+    accumulator. Encoding as Windows-1251 (the codepage implied by this
+    program's own Ukrainian-language UI strings, found embedded in the
+    binary as cp1251 bytes) and summing the resulting BYTE values is the
+    correct approach for any non-ASCII filename. For plain ASCII filenames
+    this is identical to summing ord() values, so no prior test case is
+    affected.
+    """
+    try:
+        encoded = name.encode("cp1251")
+    except UnicodeEncodeError:
+        encoded = name.encode("cp1251", errors="replace")
+    return sum(encoded)
+
+
 def file_age_dos(path: str) -> int:
     """
     Reproduce Delphi's FileAge(): packed 32-bit DOS date/time derived from the
@@ -211,7 +231,7 @@ def compute_checksum(path: str, name_for_sum: str = None) -> str:
         acc += file_age_dos(path)
     acc += file_attributes(path)
     acc += file_size
-    acc += sum(ord(c) for c in name_for_sum)
+    acc += name_sum_bytes(name_for_sum)
 
     # ACCUMULATOR_FUDGE: confirmed via real-world testing against three
     # independent files (different content, size, filename, and both odd
@@ -292,7 +312,7 @@ def calibrate_accumulator_constant(known_checksum: str, file_size: int, filename
     This is a DIAGNOSTIC helper, not part of the core algorithm.
     """
     target = known_checksum.replace("-", "")
-    name_sum = sum(ord(c) for c in filename)
+    name_sum = name_sum_bytes(filename)
     block_count = file_size // 128
     base = block_count + name_sum
 
@@ -324,7 +344,7 @@ def debug_accumulator(path: str, name_for_sum: str = None) -> None:
     file_size = os.path.getsize(path)
     age = file_age_dos(path) if os.path.exists(path) else 0
     attrs = file_attributes(path)
-    namesum = sum(ord(c) for c in name_for_sum)
+    namesum = name_sum_bytes(name_for_sum)
     acc = age + attrs + file_size + namesum
 
     print(f"path           = {path!r}")
@@ -376,7 +396,7 @@ def debug_N_hypotheses(path: str, name_for_sum: str = None) -> None:
         acc += file_age_dos(path)
     acc += file_attributes(path)
     acc += file_size
-    acc += sum(ord(c) for c in name_for_sum)
+    acc += name_sum_bytes(name_for_sum)
     acc += 1  # the confirmed universal fudge
 
     def hist_sum_for(data, N):
