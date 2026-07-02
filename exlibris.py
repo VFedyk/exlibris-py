@@ -432,7 +432,29 @@ def main(argv=None):
             "                                           in the checksum's name-sum term)\n\n"
             "  Without these, results on non-Windows hosts will only match the real\n"
             "  Exl_win.exe output by coincidence - see file_attributes()/file_age_dos()\n"
-            "  docstrings for exactly what's being approximated and why."
+            "  docstrings for exactly what's being approximated and why.\n\n"
+            "Win32 file attribute values (for --attributes):\n"
+            "  These are bitflags - combine by adding the values together (or pass the\n"
+            "  combined hex directly). The value shown on a real Windows machine via\n"
+            "  'Get-Item file | Format-List Attributes' or the debug_attributes_source()\n"
+            "  helper is the one to use for an exact match.\n\n"
+            "    0x01   READONLY     read-only file\n"
+            "    0x02   HIDDEN       hidden file\n"
+            "    0x04   SYSTEM       operating system file\n"
+            "    0x10   DIRECTORY    is a directory\n"
+            "    0x20   ARCHIVE      archive bit (the default Windows sets on ordinary\n"
+            "                        files after creation/modification - most common\n"
+            "                        single value you'll need)\n"
+            "    0x80   NORMAL       no other attributes set (only valid alone)\n"
+            "    0x100  TEMPORARY    temporary file (kept in cache, written on close)\n"
+            "    0x400  REPARSE_POINT  symlink or junction point\n"
+            "    0x800  COMPRESSED   NTFS-compressed file\n"
+            "    0x2000 ENCRYPTED    NTFS-encrypted file\n\n"
+            "  Examples:\n"
+            "    --attributes 0x20        plain file, archive bit set (most common case)\n"
+            "    --attributes 0x21        archive + read-only (0x20 + 0x01)\n"
+            "    --attributes 32          same as 0x20, decimal form\n"
+            "    --attributes 0x23        archive + hidden + read-only (0x20+0x02+0x01)\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -451,8 +473,11 @@ def main(argv=None):
     )
     parser.add_argument(
         "--attributes", dest="attributes", default=None, type=str,
-        help="Override the Win32 file attributes value (decimal or 0x-prefixed hex, "
-             "e.g. 0x20 for FILE_ATTRIBUTE_ARCHIVE). Applies to ALL paths given.",
+        help="Override the Win32 file attributes value: decimal or 0x-prefixed hex. "
+             "Common value: 0x20 (FILE_ATTRIBUTE_ARCHIVE, the default for an ordinary "
+             "file). Combine flags by adding them, e.g. 0x21 = archive + read-only. "
+             "See the bottom of --help for the full list of named values. "
+             "Applies to ALL paths given.",
     )
     parser.add_argument(
         "--file-size", dest="file_size", default=None, type=int,
