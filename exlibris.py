@@ -223,17 +223,20 @@ def compute_checksum(path: str, name_for_sum: str = None) -> str:
     acc += 1
 
     # --- histogram / golden-ratio pass ---
-    # Confirmed via real-world test: this loop runs unconditionally whenever
-    # bytes were actually read, regardless of how small N/file_size is - there
-    # is no "skip if file is tiny" guard in the original code.
-    N = file_size
-    P = delphi_round(N * GOLDEN)
-    histogram = [0.0] * NUM_BUCKETS
-
     with open(path, "rb") as f:
         data = f.read(READ_LIMIT)
 
     bytes_read = len(data)
+
+    # N is the number of bytes actually read by TFileStream.Read (capped at
+    # READ_LIMIT=65535), NOT the full file_size. For files <= 65535 bytes
+    # these are identical, which is why this distinction was invisible in
+    # every test file used so far (largest verified match was 23KB). Confirmed
+    # necessary once a file >65535 bytes was tested.
+    N = bytes_read
+    P = delphi_round(N * GOLDEN)
+    histogram = [0.0] * NUM_BUCKETS
+
     if bytes_read > 0:
         for i in range(1, bytes_read + 1):  # 1-indexed, matches the original loop
             b = data[i - 1]
