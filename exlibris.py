@@ -179,18 +179,22 @@ def compute_checksum(path: str, name_for_sum: str = None) -> str:
     if name_for_sum is None:
         name_for_sum = os.path.basename(path)
 
-    file_size = os.path.getsize(path)
-    block_count = file_size // 128  # N
+    file_size = os.path.getsize(path)  # N - confirmed via real-world test against
+                                        # Exl_win.exe output: this is FileSize directly,
+                                        # NOT FileSize // 128 as an earlier draft assumed.
 
     acc = 0
     if os.path.exists(path):
         acc += file_age_dos(path)
     acc += file_attributes(path)
-    acc += block_count
+    acc += file_size
     acc += sum(ord(c) for c in name_for_sum)
 
     # --- histogram / golden-ratio pass ---
-    N = block_count
+    # Confirmed via real-world test: this loop runs unconditionally whenever
+    # bytes were actually read, regardless of how small N/file_size is - there
+    # is no "skip if file is tiny" guard in the original code.
+    N = file_size
     P = delphi_round(N * GOLDEN)
     histogram = [0.0] * NUM_BUCKETS
 
@@ -204,13 +208,11 @@ def compute_checksum(path: str, name_for_sum: str = None) -> str:
             bucket = delphi_round(b * PI_OVER_128 / HAND_PI_OVER_180)
             bucket = max(0, min(NUM_BUCKETS - 1, bucket))
 
-            if N > 0 and i <= P:
-                weight = (i * GOLDEN_COMPLEMENT) / P if P else 0.0
-            elif N > 0:
-                denom = (N - P + 1)
-                weight = ((N - i + 1) * GOLDEN_COMPLEMENT) / denom if denom else 0.0
+            if P != 0 and i <= P:
+                weight = (i * GOLDEN_COMPLEMENT) / P
             else:
-                weight = 0.0
+                denom = (N - P + 1)
+                weight = ((N - i + 1) * GOLDEN_COMPLEMENT) / denom if denom != 0 else 0.0
 
             histogram[bucket] += weight
 
