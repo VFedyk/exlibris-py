@@ -75,6 +75,7 @@ CAVEATS / UNVERIFIED PIECES
 import math
 import os
 import struct
+import sys
 import time
 
 ALPHABET = "0123456789ABCDEFGHKLMNPRSTUVWXYZ"
@@ -448,7 +449,8 @@ def main(argv=None):
             "    --file-age 1558028784                (raw packed DOS FileAge int)\n"
             "    --attributes 0x20                    (Win32 attributes, hex or decimal)\n"
             "    --name \"original-filename.docx\"      (overrides the basename used\n"
-            "                                           in the checksum's name-sum term)\n\n"
+            "                                           in the checksum's name-sum term)\n"
+            "    --format table                       (or 'json' - see --format below)\n\n"
             "  Without these, results on non-Windows hosts will only match the real\n"
             "  Exl_win.exe output by coincidence - see file_attributes()/file_age_dos()\n"
             "  docstrings for exactly what's being approximated and why.\n\n"
@@ -503,6 +505,23 @@ def main(argv=None):
         help="Override the file size in bytes (rarely needed; default: actual size on disk). "
              "Applies to ALL paths given - only useful with a single path.",
     )
+    parser.add_argument(
+        "--format", dest="output_format", default="text",
+        choices=["text", "table", "json"],
+        help="Output format: 'text' (default) prints 'path: CHECKSUM' per line; "
+             "'table' prints an aligned table; 'json' prints a JSON array of "
+             "{\"path\", \"checksum\", \"error\"} objects, suitable for piping to "
+             "other tools.",
+    )
+    parser.add_argument(
+        "-q", "--quiet", dest="quiet", action="store_true",
+        help="Print checksums only, with no path/filename attached - one per "
+             "line for 'text'/'table', a plain JSON array of strings for "
+             "'json'. Useful for capturing a single checksum straight into a "
+             "shell variable, e.g. CHECKSUM=$(exlibrys -q file.txt). A failed "
+             "file still reports its error (with no path to identify it by, "
+             "so this is best combined with a single input file).",
+    )
     args = parser.parse_args(argv)
 
     file_age = None
@@ -522,18 +541,73 @@ def main(argv=None):
         except ValueError:
             parser.error(f"--attributes value '{args.attributes}' is not a valid integer (decimal or 0x-hex).")
 
+    results = []
     for p in args.paths:
         try:
-            result = compute_checksum(
+            checksum = compute_checksum(
                 p,
                 name_for_sum=args.name_for_sum,
                 file_age=file_age,
                 attributes=attributes,
                 file_size=args.file_size,
             )
-            print(f"{p}: {result}")
+            results.append({"path": p, "checksum": checksum, "error": None})
         except Exception as e:
-            print(f"{p}: ERROR - {e}")
+            results.append({"path": p, "checksum": None, "error": str(e)})
+
+    _print_results(results, args.output_format, quiet=args.quiet)
+
+    if any(r["error"] is not None for r in results):
+        sys.exit(1)
+
+
+def _print_results(results, output_format, quiet=False):
+    if output_format == "json":
+        import json
+        if quiet:
+            values = [r["checksum"] if r["checksum"] is not None else f"ERROR - {r['error']}" for r in results]
+            print(json.dumps(values, indent=2, ensure_ascii=False))
+        else:
+            print(json.dumps(results, indent=2, ensure_ascii=False))
+        return
+
+    if output_format == "table":
+        if quiet:
+            value_w = max(
+                [len("Checksum")]
+                + [len(r["checksum"]) if r["checksum"] else len(f"ERROR - {r['error']}") for r in results]
+            )
+            print(f"{'Checksum':<{value_w}}")
+            print("-" * value_w)
+            for r in results:
+                value = r["checksum"] if r["checksum"] else f"ERROR - {r['error']}"
+                print(f"{value:<{value_w}}")
+            return
+        path_w = max([len("Path")] + [len(r["path"]) for r in results])
+        value_w = max(
+            [len("Checksum")]
+            + [len(r["checksum"]) if r["checksum"] else len(f"ERROR - {r['error']}") for r in results]
+        )
+        header = f"{'Path':<{path_w}}  {'Checksum':<{value_w}}"
+        print(header)
+        print("-" * path_w + "  " + "-" * value_w)
+        for r in results:
+            value = r["checksum"] if r["checksum"] else f"ERROR - {r['error']}"
+            print(f"{r['path']:<{path_w}}  {value:<{value_w}}")
+        return
+
+    # text (default)
+    for r in results:
+        if quiet:
+            if r["checksum"] is not None:
+                print(r["checksum"])
+            else:
+                print(f"ERROR - {r['error']}")
+        else:
+            if r["checksum"] is not None:
+                print(f"{r['path']}: {r['checksum']}")
+            else:
+                print(f"{r['path']}: ERROR - {r['error']}")
 
 
 if __name__ == "__main__":

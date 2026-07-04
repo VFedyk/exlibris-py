@@ -269,6 +269,156 @@ def test_cli_accepts_human_readable_datetime(tmp_path, capsys):
 
 
 # ---------------------------------------------------------------------------
+# Output format: text / table / json
+# ---------------------------------------------------------------------------
+
+def test_cli_format_text_is_default(tmp_path, capsys):
+    p = tmp_path / "1.txt"
+    p.write_bytes(b"test")
+    ex.main(["--file-age", "1558028662", "--attributes", "0x20", str(p)])
+    out = capsys.readouterr().out
+    assert out.strip() == f"{p}: 54T8-E0TL"
+
+
+def test_cli_format_table(tmp_path, capsys):
+    p1 = tmp_path / "1.txt"
+    p2 = tmp_path / "2.txt"
+    p1.write_bytes(b"test")
+    p2.write_bytes(b"test2")
+    ex.main(["--file-age", "1558028662", "--attributes", "0x20", "--format", "table", str(p1), str(p2)])
+    out = capsys.readouterr().out
+    lines = out.strip().splitlines()
+    assert lines[0].startswith("Path")
+    assert "Checksum" in lines[0]
+    assert set(lines[1]) == {"-", " "}  # separator row
+    assert "54T8-E0TL" in lines[2]
+    assert "G100" in lines[3]  # second half is metadata-independent, always matches
+
+
+def test_cli_format_json_well_formed(tmp_path, capsys):
+    import json
+    p = tmp_path / "1.txt"
+    p.write_bytes(b"test")
+    ex.main(["--file-age", "1558028662", "--attributes", "0x20", "--format", "json", str(p)])
+    out = capsys.readouterr().out
+    parsed = json.loads(out)
+    assert isinstance(parsed, list)
+    assert len(parsed) == 1
+    assert parsed[0]["path"] == str(p)
+    assert parsed[0]["checksum"] == "54T8-E0TL"
+    assert parsed[0]["error"] is None
+
+
+def test_cli_format_json_reports_errors(tmp_path, capsys):
+    import json
+    p_ok = tmp_path / "1.txt"
+    p_ok.write_bytes(b"test")
+    p_missing = tmp_path / "does_not_exist.txt"
+
+    with pytest.raises(SystemExit) as exc_info:
+        ex.main(["--file-age", "1558028662", "--attributes", "0x20", "--format", "json",
+                 str(p_ok), str(p_missing)])
+    assert exc_info.value.code == 1
+
+    out = capsys.readouterr().out
+    parsed = json.loads(out)
+    assert parsed[0]["error"] is None
+    assert parsed[0]["checksum"] == "54T8-E0TL"
+    assert parsed[1]["checksum"] is None
+    assert parsed[1]["error"] is not None
+
+
+def test_cli_format_table_reports_errors(tmp_path, capsys):
+    p_missing = tmp_path / "does_not_exist.txt"
+    with pytest.raises(SystemExit) as exc_info:
+        ex.main(["--format", "table", str(p_missing)])
+    assert exc_info.value.code == 1
+    out = capsys.readouterr().out
+    assert "ERROR" in out
+
+
+def test_cli_exit_code_zero_when_all_succeed(tmp_path):
+    p = tmp_path / "1.txt"
+    p.write_bytes(b"test")
+    # main() returns normally (no SystemExit) when every file succeeds
+    ex.main(["--file-age", "1558028662", "--attributes", "0x20", str(p)])
+
+
+def test_cli_rejects_invalid_format_choice(tmp_path, capsys):
+    p = tmp_path / "1.txt"
+    p.write_bytes(b"test")
+    with pytest.raises(SystemExit) as exc_info:
+        ex.main(["--format", "xml", str(p)])
+    assert exc_info.value.code == 2
+
+
+# ---------------------------------------------------------------------------
+# --quiet / -q: checksum-only output, no path
+# ---------------------------------------------------------------------------
+
+def test_cli_quiet_text_single_file(tmp_path, capsys):
+    p = tmp_path / "1.txt"
+    p.write_bytes(b"test")
+    ex.main(["--file-age", "1558028662", "--attributes", "0x20", "-q", str(p)])
+    out = capsys.readouterr().out
+    assert out.strip() == "54T8-E0TL"
+    assert str(p) not in out
+
+
+def test_cli_quiet_text_multiple_files(tmp_path, capsys):
+    p1 = tmp_path / "1.txt"
+    p2 = tmp_path / "2.txt"
+    p1.write_bytes(b"test")
+    p2.write_bytes(b"test2")
+    ex.main(["--file-age", "1558028662", "--attributes", "0x20", "--quiet", str(p1), str(p2)])
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert lines == ["54T8-E0TL", lines[1]]
+    assert lines[1].endswith("G100")
+    assert str(p1) not in "\n".join(lines)
+    assert str(p2) not in "\n".join(lines)
+
+
+def test_cli_quiet_table_has_no_path_column(tmp_path, capsys):
+    p = tmp_path / "1.txt"
+    p.write_bytes(b"test")
+    ex.main(["--file-age", "1558028662", "--attributes", "0x20", "-q", "--format", "table", str(p)])
+    out = capsys.readouterr().out
+    lines = out.strip().splitlines()
+    assert lines[0].strip() == "Checksum"
+    assert "Path" not in out
+    assert str(p) not in out
+
+
+def test_cli_quiet_json_is_array_of_strings(tmp_path, capsys):
+    import json
+    p1 = tmp_path / "1.txt"
+    p2 = tmp_path / "2.txt"
+    p1.write_bytes(b"test")
+    p2.write_bytes(b"test2")
+    ex.main(["--file-age", "1558028662", "--attributes", "0x20", "-q", "--format", "json", str(p1), str(p2)])
+    out = capsys.readouterr().out
+    parsed = json.loads(out)
+    assert parsed == ["54T8-E0TL", parsed[1]]
+    assert all(isinstance(x, str) for x in parsed)
+    assert str(p1) not in out
+
+
+def test_cli_quiet_reports_error_without_path_prefix(tmp_path, capsys):
+    # Quiet mode strips the "path: " prefix we add ourselves. The
+    # underlying OS error message may still mention the path internally
+    # (that's just what FileNotFoundError says) - that's fine and even
+    # useful, since it's the only way to identify which file failed in a
+    # quiet multi-file batch. What we guarantee is no "path: " prefix.
+    p_missing = tmp_path / "does_not_exist.txt"
+    with pytest.raises(SystemExit) as exc_info:
+        ex.main(["-q", str(p_missing)])
+    assert exc_info.value.code == 1
+    out = capsys.readouterr().out
+    assert "ERROR" in out
+    assert not out.startswith(str(p_missing))
+
+
+# ---------------------------------------------------------------------------
 # General properties (not tied to a specific known-good value)
 # ---------------------------------------------------------------------------
 

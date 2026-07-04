@@ -38,8 +38,76 @@ uv run exlibrys.py --file-age "2024-06-15 14:30:22" --attributes 0x20 file.txt
 | `--attributes` | Override the Win32 file attributes value (decimal or `0x`-prefixed hex). See table below. |
 | `--name` | Override the filename used in the checksum's name-sum term (default: the file's basename). Use this if the file was renamed since the checksum was generated. |
 | `--file-size` | Override the file size in bytes. Rarely needed. |
+| `--format` | Output format: `text` (default), `table`, or `json`. See below. |
 
 All overrides apply to every path given in that invocation.
+
+#### Output formats
+
+```bash
+uv run exlibrys.py --format text file1.txt file2.txt    # default
+uv run exlibrys.py --format table file1.txt file2.txt
+uv run exlibrys.py --format json file1.txt file2.txt
+```
+
+**text** (default) - one line per file:
+
+```
+file1.txt: 54T8-E0TL
+file2.txt: 54V1-G100
+```
+
+**table** - aligned columns:
+
+```
+Path        Checksum
+----------  ---------
+file1.txt   54T8-E0TL
+file2.txt   54V1-G100
+```
+
+**json** - an array of objects, useful for piping into other tools:
+
+```json
+[
+  {"path": "file1.txt", "checksum": "54T8-E0TL", "error": null},
+  {"path": "file2.txt", "checksum": "54V1-G100", "error": null}
+]
+```
+
+In all three formats, a file that fails (e.g. doesn't exist, or a real
+error during computation) is reported inline rather than stopping the
+whole run - `checksum` is `null` and `error` holds the message in JSON
+mode, or an `ERROR - ...` string in text/table mode. The process exits
+with status 1 if any file failed, 0 if all succeeded.
+
+#### Checksum-only output (`-q` / `--quiet`)
+
+Strips the path/filename from the output entirely, in any format - just
+the checksum value(s):
+
+```bash
+uv run exlibrys.py -q file.txt
+# 54T8-E0TL
+
+uv run exlibrys.py -q file1.txt file2.txt
+# 54T8-E0TL
+# 54V1-G100
+```
+
+Handy for capturing a single checksum straight into a shell variable:
+
+```bash
+CHECKSUM=$(uv run exlibrys.py -q file.txt)
+```
+
+Combines with `--format`: `-q --format json` gives a plain JSON array of
+checksum strings (no `path`/`error` keys), `-q --format table` gives a
+single-column table. Note that if a file fails, the error message itself
+may still mention its path (that's just what the underlying OS error
+says) - `--quiet` only omits the `path: ` prefix we add ourselves, so
+it's most useful for batches you don't expect to fail, or a single file
+at a time.
 
 **Why this matters:** on Linux/macOS, real Windows file attributes and
 timestamps can't be read directly, so the script falls back to
@@ -166,11 +234,27 @@ The test suite (`tests/test_exlibrys.py`) covers:
 - Full checksum matches against real, previously-confirmed `Exl_win.exe`
   output (content + explicit FileAge/attributes together).
 - Content-only matches for larger synthetic fixtures, regenerated
-  deterministically from a fixed seed.
+  deterministically from a fixed seed (no binary files are committed to
+  the repo - see below).
 - A regression test confirming the entire file is processed rather than
   capped at 65535 bytes (a real bug caught during reconstruction).
 - Unit tests for the individual building blocks: filename byte-summing
   (including the cp1251 Cyrillic case), base32 packing, the Borland
   `Str(Extended)` float formatter, DOS date/time packing, and CLI argument
   parsing/error handling.
+
+### Regenerating test fixtures for manual testing
+
+The 1KB/1MB/5MB files used in tests are generated in-memory from a fixed
+seed - they aren't committed to the repo as binary files. If you want a
+local copy to manually run against the real `Exl_win.exe` on Windows:
+
+```bash
+python scripts/generate_fixtures.py [output_dir]
+```
+
+This writes byte-identical copies of what the test suite generates
+in-memory, so any checksum you get from the real program on these files
+can be added back into `tests/test_exlibrys.py` as a new confirmed test
+case.
 
