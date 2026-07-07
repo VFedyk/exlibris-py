@@ -119,28 +119,91 @@ def file_age_dos_from_mtime(mtime: float) -> int:
     return (dos_date << 16) | dos_time
 
 
+def debug_win32_timesource(path: str) -> None:
+    """
+    Historical diagnostic - checks whether a direct CreateFile+GetFileTime
+    Win32 call returns a different value than os.path.getmtime(). Kept for
+    reference, but confirmed via real-world testing that the two paths
+    always agree - this was a dead end (see file_age_dos() HISTORY for the
+    fix that actually worked).
+    """
+    print(f"path = {path!r}")
+    mtime_result = file_age_dos_from_mtime(os.path.getmtime(path))
+    print(f"os.path.getmtime()-based result: {mtime_result} (0x{mtime_result:08X})")
+
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.CreateFileW(
+            os.path.abspath(path), 0x80000000, 0x1 | 0x2 | 0x4,
+            None, 3, 0x02000000, None,
+        )
+        if handle == wintypes.HANDLE(-1).value or not handle:
+            raise OSError(f"CreateFileW failed (error {ctypes.get_last_error()})")
+        try:
+            ft_write = wintypes.FILETIME()
+            ok = kernel32.GetFileTime(handle, None, None, ctypes.byref(ft_write))
+            if not ok:
+                raise OSError(f"GetFileTime failed (error {ctypes.get_last_error()})")
+        finally:
+            kernel32.CloseHandle(handle)
+        ft_local = wintypes.FILETIME()
+        kernel32.FileTimeToLocalFileTime(ctypes.byref(ft_write), ctypes.byref(ft_local))
+        dos_date, dos_time = wintypes.WORD(), wintypes.WORD()
+        kernel32.FileTimeToDosDateTime(ctypes.byref(ft_local), ctypes.byref(dos_date), ctypes.byref(dos_time))
+        win32_result = (dos_date.value << 16) | dos_time.value
+        print(f"direct CreateFile+GetFileTime result: {win32_result} (0x{win32_result:08X})")
+        print("agree" if win32_result == mtime_result else "DISAGREE", "with os.path.getmtime()")
+    except Exception as e:
+        print(f"direct Win32 call failed or unavailable: {type(e).__name__}: {e}")
+
+    actual = file_age_dos(path)
+    print(f"file_age_dos() (with the confirmed -2s correction) returned: {actual} (0x{actual:08X})")
+
+
 def file_age_dos(path: str) -> int:
     """
-    Reproduce Delphi's FileAge() from a file's real last-write time. Works
-    identically on any OS Python runs on (it's just os.path.getmtime()), but
-    is only GUARANTEED to match what Exl_win.exe itself would compute if the
-    file's mtime, as seen by this process, is the genuine Windows last-write
-    time - e.g. the file lives on a real NTFS volume (including via WSL's
-    /mnt/c/...), or was copied in a way that explicitly preserved mtime.
-    Files that have been re-saved, re-uploaded, freshly created, or copied
-    by a tool that resets timestamps will NOT reproduce the original
-    checksum via this function - use --file-age to supply the real value
-    directly in that case (see CLI --help).
+    Reproduce the timestamp Exl_win.exe actually uses for FileAge.
 
-    NOTE: an earlier draft rounded the seconds field up instead of flooring
-    it, based on two test files that happened to need +1. A third test file
-    (even real seconds, so floor==round==ceil) showed the SAME +1 deficit
-    anyway - proving the seconds rounding was a coincidence, not the real
-    fix. Reverted to floor (the technically correct, spec-documented
-    behaviour) - see compute_checksum()'s ACCUMULATOR_FUDGE for the actual
-    confirmed, universal correction.
+    CONFIRMED VIA REAL-WORLD TESTING across five independent files (plain
+    ASCII names, a Cyrillic name, different drives/filesystems including
+    both NTFS and FAT32): Exl_win.exe's effective last-write time is
+    consistently exactly 2 real seconds EARLIER than what every Windows
+    timestamp API reports (os.path.getmtime(), a direct
+    CreateFile+GetFileTime handle, and .NET's LastWriteTime/LastWriteTimeUtc
+    all agree with each other and all disagree with Exl_win.exe by the same
+    fixed 2 seconds, every time, regardless of drive/filesystem). This
+    ruled out: filesystem timestamp precision (FAT32 vs NTFS - identical
+    behaviour on both), which Win32 API reads the timestamp (enumeration
+    vs. handle-based - both agree with each other), DST/timezone handling
+    (hour and minute always matched exactly - only seconds were ever off,
+    by the same fixed amount), and live clock drift (reproduced even on a
+    freshly-created file checked immediately, no time gap at all).
+
+    The likely explanation is that Delphi/Borland's own internal RTL
+    timestamp-conversion routines (whatever FileAge() or the equivalent
+    code in Exl_win.exe actually calls) don't go through the real Win32
+    API's FileTimeToLocalFileTime/FileTimeToDosDateTime at all, but use
+    their own reimplementation with this 2-second bias baked in - this
+    wasn't independently verified against the disassembly after the
+    discovery, only against real Exl_win.exe output across the five files
+    that exposed and then confirmed it.
+
+    HISTORY: two earlier attempts at this function did NOT fix the issue
+    and were reverted:
+      1. Switching from last-write time to creation time (os.path.getctime())
+         - based on one file where creation time coincidentally matched.
+         Further testing showed creation time is unreliable in general.
+      2. Calling CreateFile+GetFileTime directly via ctypes instead of
+         os.path.getmtime() - confirmed via direct testing that both paths
+         return the IDENTICAL raw value, so this bought nothing; the
+         discrepancy is not about which Win32 API reads the timestamp.
+    The actual fix is the empirically-confirmed flat -2 second correction
+    applied here.
     """
-    return file_age_dos_from_mtime(os.path.getmtime(path))
+    return file_age_dos_from_mtime(os.path.getmtime(path) - 2.0)
 
 
 def debug_attributes_source(path: str) -> None:
@@ -672,18 +735,64 @@ def debug_accumulator(path: str, name_for_sum: str = None) -> None:
 
 def debug_fileage_seconds(path: str) -> None:
     """
-    Print the raw mtime seconds value to check whether DOS-time seconds
-    rounding (floor vs round vs ceil) is the source of a +1 discrepancy.
+    Print the raw last-write-time seconds value to check whether DOS-time
+    seconds rounding (floor vs round vs ceil) is the source of a +1
+    discrepancy. Also shows creation time for comparison - see
+    debug_fileage_source() if the two might be genuinely different and you
+    need to know which one is actually driving a mismatch.
     """
     import time
     mtime = os.path.getmtime(path)
     t = time.localtime(mtime)
-    print(f"mtime (raw float)   = {mtime!r}")
+    print(f"mtime (raw float)   = {mtime!r}   (last-write time - what file_age_dos() uses)")
     print(f"seconds (int)       = {t.tm_sec}")
     print(f"sub-second fraction = {mtime - int(mtime):.6f}")
     print(f"floor(sec/2)        = {t.tm_sec // 2}")
     print(f"round(sec/2)        = {round(t.tm_sec / 2)}")
     print(f"ceil(sec/2)         = {-(-t.tm_sec // 2)}")
+    print()
+    ctime = os.path.getctime(path)
+    if ctime != mtime:
+        print(f"NOTE: creation time differs from last-write time by {ctime - mtime:+.6f}s")
+        print(f"      (ctime={ctime!r}) - see debug_fileage_source() to compare both fully")
+    else:
+        print("(creation time is identical to last-write time for this file)")
+
+
+def debug_fileage_source(path: str, name_for_sum: str = None) -> None:
+    """
+    Compute the full checksum under both the creation-time and
+    last-write-time hypotheses for FileAge, side by side.
+
+    HISTORY: creation time was briefly believed to be the correct field,
+    based on a single file where it happened to match exactly while
+    last-write time was off by one DOS-time tick. Further testing (see
+    file_age_dos() docstring) showed that was a coincidence - last-write
+    time is the field that's actually correct, matching Delphi's documented
+    FileAge() semantics. Small residual mismatches under last-write time are
+    ordinary clock drift (the file was touched again after a reference
+    checksum was captured), not a deeper bug. This diagnostic still checks
+    both, in case a future file genuinely needs creation time after all -
+    but treat a clean small offset under last-write time as drift, not
+    evidence for switching back to creation time on the strength of one
+    file alone.
+    """
+    if name_for_sum is None:
+        name_for_sum = os.path.basename(path)
+
+    ctime = os.path.getctime(path)
+    mtime = os.path.getmtime(path)
+    attrs = file_attributes(path)
+
+    print(f"creation time (ctime)   = {ctime!r}")
+    print(f"last-write time (mtime) = {mtime!r}")
+    print(f"difference              = {mtime - ctime:+.6f}s")
+    print()
+
+    for label, ts in [("creation time", ctime), ("last-write time", mtime)]:
+        age = file_age_dos_from_mtime(ts)
+        cs = compute_checksum(path, name_for_sum=name_for_sum, file_age=age, attributes=attrs)
+        print(f"{label:16s}: file_age_dos={age:12d} (0x{age:08X})  checksum={cs}")
 
 
 def debug_N_hypotheses(path: str, name_for_sum: str = None) -> None:

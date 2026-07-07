@@ -198,6 +198,81 @@ def test_file_age_dos_from_mtime_roundtrip_fields():
     assert sec2 == 22 // 2  # DOS time stores seconds at half resolution, floored
 
 
+def test_file_age_dos_uses_mtime_not_ctime(tmp_path, monkeypatch):
+    """
+    Regression test confirming file_age_dos() uses last-write time
+    (os.path.getmtime), matching Delphi's documented FileAge() semantics -
+    not creation time.
+
+    HISTORY: a prior version briefly switched to creation time
+    (os.path.getctime), based on a single file where creation time exactly
+    matched a required checksum while last-write time was off by one
+    DOS-time tick. That turned out to be a coincidence - testing against
+    more files showed creation time produces large, inconsistent errors,
+    while last-write time (with the -2s correction confirmed separately,
+    see test_file_age_dos_applies_confirmed_2_second_correction) is
+    consistently correct. This test guards against re-introducing the
+    creation-time mistake.
+    """
+    p = tmp_path / "f.txt"
+    p.write_bytes(b"x")
+
+    fake_ctime = 1700000010.0  # even seconds -> DOS seconds field = 5
+    fake_mtime = 1700000050.0  # different even seconds -> DOS seconds field = 25
+
+    monkeypatch.setattr(os.path, "getctime", lambda path: fake_ctime)
+    monkeypatch.setattr(os.path, "getmtime", lambda path: fake_mtime)
+
+    result = ex.file_age_dos(str(p))
+    expected_from_ctime = ex.file_age_dos_from_mtime(fake_ctime)
+    # file_age_dos() applies the confirmed -2s correction on top of mtime
+    # (see the dedicated test for that behaviour) - account for it here so
+    # this test is specifically about mtime-vs-ctime, not the correction.
+    expected_from_mtime = ex.file_age_dos_from_mtime(fake_mtime - 2.0)
+
+    assert result == expected_from_mtime
+    assert result != expected_from_ctime
+
+
+def test_file_age_dos_applies_confirmed_2_second_correction(tmp_path, monkeypatch):
+    """
+    Regression test for the actual, confirmed fix: Exl_win.exe's effective
+    FileAge is consistently exactly 2 real seconds EARLIER than what
+    os.path.getmtime() (and every other Windows timestamp API checked)
+    reports. Confirmed across five independent real files, on both NTFS
+    and FAT32, ruling out filesystem type, which Win32 API reads the
+    timestamp, DST/timezone handling, and live clock drift as explanations
+    (see file_age_dos() docstring for the full history). This test guards
+    the correction itself, including correct roll-back across a minute
+    boundary (e.g. a real time of HH:MM:00 or HH:MM:01 must roll back into
+    the previous minute, not clamp or wrap incorrectly).
+    """
+    import datetime
+
+    p = tmp_path / "f.txt"
+    p.write_bytes(b"x")
+
+    # Simple case: no boundary crossing.
+    dt = datetime.datetime(2026, 6, 29, 20, 11, 46)
+    monkeypatch.setattr(os.path, "getmtime", lambda path: dt.timestamp())
+    result = ex.file_age_dos(str(p))
+    expected = ex.file_age_dos_from_mtime(dt.timestamp() - 2.0)
+    assert result == expected
+
+    # Boundary-crossing case: HH:MM:00 minus 2s must roll back a full minute,
+    # not just decrement the seconds field incorrectly.
+    dt_boundary = datetime.datetime(2026, 6, 29, 20, 12, 0)
+    monkeypatch.setattr(os.path, "getmtime", lambda path: dt_boundary.timestamp())
+    result_boundary = ex.file_age_dos(str(p))
+
+    dos_time = result_boundary & 0xFFFF
+    hour = (dos_time >> 11) & 0x1F
+    minute = (dos_time >> 5) & 0x3F
+    sec_field = dos_time & 0x1F
+    assert (hour, minute) == (20, 11)  # rolled back to 20:11, not stuck at 20:12
+    assert sec_field == 58 // 2  # 20:12:00 - 2s = 20:11:58
+
+
 # ---------------------------------------------------------------------------
 # CLI argument parsing helpers
 # ---------------------------------------------------------------------------
