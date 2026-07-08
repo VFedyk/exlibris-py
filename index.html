@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EXLIBRYS.EXE — checksum utility</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-0:#050a1e;
+    --bg-1:#0a1330;
+    --panel:#0f1a42;
+    --panel-2:#131f52;
+    --line:#4d6fc7;
+    --line-dim:#2a3a72;
+    --cyan:#7fe0d6;
+    --amber:#e8b923;
+    --amber-dim:#8a6c1f;
+    --text:#eef1fb;
+    --text-dim:#8d9bcf;
+    --error:#ff7a7a;
+    --success:#7ee787;
+  }
+
+  *{ box-sizing:border-box; }
+
+  body{
+    margin:0;
+    min-height:100vh;
+    background:
+      radial-gradient(ellipse at 20% -10%, #16265f 0%, transparent 55%),
+      radial-gradient(ellipse at 100% 0%, #10204f 0%, transparent 45%),
+      var(--bg-0);
+    color:var(--text);
+    font-family:'JetBrains Mono', monospace;
+    padding:32px 16px 64px;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* subtle CRT scanlines, very low opacity so it never fights legibility */
+  body::before{
+    content:"";
+    position:fixed;
+    inset:0;
+    pointer-events:none;
+    background:repeating-linear-gradient(
+      to bottom,
+      rgba(255,255,255,0.018) 0px,
+      rgba(255,255,255,0.018) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+    z-index:1000;
+  }
+
+  .frame{
+    max-width:760px;
+    margin:0 auto;
+    position:relative;
+  }
+
+  .titlebar{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    padding:10px 18px;
+    background:linear-gradient(180deg, #16266a, #101d4f);
+    border:1px solid var(--line);
+    border-bottom:none;
+    font-family:'Space Mono', monospace;
+  }
+  .titlebar .name{
+    font-weight:700;
+    letter-spacing:0.12em;
+    color:var(--cyan);
+    font-size:15px;
+  }
+  .titlebar .name .blink{
+    display:inline-block;
+    width:9px; height:16px;
+    background:var(--cyan);
+    margin-left:6px;
+    vertical-align:-2px;
+    animation:blink 1.1s steps(1) infinite;
+  }
+  .titlebar .meta{
+    font-size:11px;
+    color:var(--text-dim);
+    letter-spacing:0.04em;
+  }
+  @keyframes blink{ 50%{ opacity:0; } }
+  @media (prefers-reduced-motion: reduce){
+    .titlebar .name .blink{ animation:none; opacity:1; }
+  }
+
+  .window{
+    border:1px solid var(--line);
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.02), transparent 40%),
+      var(--panel);
+    padding:0;
+    box-shadow: 8px 8px 0 rgba(0,0,0,0.35);
+  }
+
+  .window-inner{
+    border:3px double var(--line-dim);
+    margin:10px;
+    padding:22px clamp(14px,4vw,32px) 26px;
+  }
+
+  h1.hero{
+    font-family:'Space Mono', monospace;
+    font-size:clamp(28px, 6vw, 40px);
+    letter-spacing:0.03em;
+    margin:0 0 4px;
+    color:var(--text);
+  }
+  .hero-sub{
+    color:var(--text-dim);
+    font-size:13px;
+    margin:0 0 22px;
+    line-height:1.6;
+    max-width:56ch;
+  }
+  .hero-sub b{ color:var(--amber); font-weight:600; }
+
+  .rule{
+    border:none;
+    border-top:1px dashed var(--line-dim);
+    margin:22px 0;
+  }
+
+  .section-label{
+    font-family:'Space Mono', monospace;
+    font-size:11px;
+    letter-spacing:0.18em;
+    color:var(--cyan);
+    text-transform:uppercase;
+    margin:0 0 12px;
+  }
+  .section-label::before{ content:"┌─ "; color:var(--line-dim); }
+  .section-label::after{ content:" ───────────────────"; color:var(--line-dim); letter-spacing:0; }
+
+  /* drop zone */
+  .dropzone{
+    border:2px dashed var(--line);
+    border-radius:2px;
+    padding:34px 18px;
+    text-align:center;
+    cursor:pointer;
+    transition:border-color .15s ease, background .15s ease;
+    background:rgba(127,224,214,0.02);
+  }
+  .dropzone:hover, .dropzone:focus-visible{
+    border-color:var(--cyan);
+    outline:none;
+  }
+  .dropzone.drag{
+    border-color:var(--amber);
+    background:rgba(232,185,35,0.06);
+  }
+  .dropzone .glyph{
+    font-size:26px;
+    color:var(--line);
+    margin-bottom:10px;
+    letter-spacing:6px;
+  }
+  .dropzone .primary{ font-size:14px; color:var(--text); }
+  .dropzone .secondary{ font-size:12px; color:var(--text-dim); margin-top:6px; }
+  .dropzone input[type=file]{ display:none; }
+
+  /* loaded file card */
+  .filecard{
+    display:none;
+    border:1px solid var(--line-dim);
+    padding:14px 16px;
+    margin-top:14px;
+    background:rgba(255,255,255,0.015);
+  }
+  .filecard.show{ display:block; }
+  .filecard .row{
+    display:flex;
+    justify-content:space-between;
+    gap:12px;
+    font-size:12px;
+    padding:3px 0;
+    color:var(--text-dim);
+  }
+  .filecard .row b{ color:var(--text); font-weight:500; }
+  .filecard .fname{
+    color:var(--amber);
+    font-weight:600;
+    font-size:13px;
+    word-break:break-all;
+  }
+  .swap-btn{
+    background:none;
+    border:1px solid var(--line-dim);
+    color:var(--text-dim);
+    font-family:inherit;
+    font-size:11px;
+    padding:5px 10px;
+    cursor:pointer;
+    margin-top:10px;
+  }
+  .swap-btn:hover{ border-color:var(--cyan); color:var(--cyan); }
+
+  fieldset{
+    border:none;
+    padding:0;
+    margin:0 0 20px;
+  }
+  label.field-label{
+    display:block;
+    font-size:11px;
+    color:var(--text-dim);
+    letter-spacing:0.05em;
+    margin-bottom:6px;
+  }
+  input[type=text], input[type=datetime-local], input[type=number]{
+    width:100%;
+    background:#0a1130;
+    border:1px solid var(--line-dim);
+    color:var(--text);
+    font-family:'JetBrains Mono', monospace;
+    font-size:13px;
+    padding:9px 10px;
+  }
+  input[type=text]:focus, input[type=datetime-local]:focus, input[type=number]:focus-visible{
+    outline:none;
+    border-color:var(--cyan);
+  }
+  .hint{ font-size:11px; color:var(--text-dim); margin-top:5px; line-height:1.5; }
+
+  .attr-grid{
+    display:grid;
+    grid-template-columns:repeat(2, 1fr);
+    gap:8px 18px;
+  }
+  @media (min-width:520px){
+    .attr-grid{ grid-template-columns:repeat(3, 1fr); }
+  }
+  .attr-item{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-size:12px;
+    color:var(--text-dim);
+    cursor:pointer;
+    user-select:none;
+  }
+  .attr-item input{
+    accent-color:var(--amber);
+    width:15px; height:15px;
+    cursor:pointer;
+  }
+  .attr-item .code{ color:var(--line); font-size:11px; }
+  .attr-item.active{ color:var(--text); }
+
+  .hexline{
+    margin-top:12px;
+    font-size:12px;
+    color:var(--text-dim);
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .hexline .val{
+    color:var(--amber);
+    font-weight:700;
+    letter-spacing:0.05em;
+  }
+
+  details.advanced{
+    border:1px solid var(--line-dim);
+    padding:2px 14px 14px;
+    margin-top:4px;
+  }
+  details.advanced summary{
+    cursor:pointer;
+    font-size:11px;
+    letter-spacing:0.1em;
+    color:var(--text-dim);
+    padding:10px 0;
+    text-transform:uppercase;
+  }
+  details.advanced summary:hover{ color:var(--cyan); }
+  .advanced-grid{
+    display:grid;
+    gap:14px;
+    grid-template-columns:1fr;
+  }
+  @media (min-width:520px){
+    .advanced-grid{ grid-template-columns:1fr 1fr; }
+  }
+
+  .compute-btn{
+    width:100%;
+    background:linear-gradient(180deg, #1c2c68, #14204f);
+    border:1px solid var(--cyan);
+    color:var(--cyan);
+    font-family:'Space Mono', monospace;
+    font-size:13px;
+    letter-spacing:0.15em;
+    text-transform:uppercase;
+    padding:14px;
+    cursor:pointer;
+    margin-top:22px;
+    transition:background .15s ease, color .15s ease;
+  }
+  .compute-btn:hover{ background:#243570; }
+  .compute-btn:disabled{ opacity:0.45; cursor:default; }
+  .compute-btn:disabled:hover{ background:linear-gradient(180deg, #1c2c68, #14204f); }
+
+  .result{
+    margin:0 0 24px;
+    border:1px solid var(--amber-dim);
+    background:rgba(232,185,35,0.05);
+    padding:18px 20px;
+    display:none;
+  }
+  .result.show{ display:block; }
+  .result .label{
+    font-size:11px;
+    letter-spacing:0.15em;
+    color:var(--text-dim);
+    text-transform:uppercase;
+    margin-bottom:8px;
+  }
+  .result .checksum-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:14px;
+    flex-wrap:wrap;
+  }
+  .result .checksum{
+    font-family:'Space Mono', monospace;
+    font-size:clamp(24px, 6vw, 32px);
+    font-weight:700;
+    letter-spacing:0.12em;
+    color:var(--amber);
+  }
+  .copy-btn{
+    background:none;
+    border:1px solid var(--amber-dim);
+    color:var(--amber);
+    font-family:inherit;
+    font-size:11px;
+    padding:8px 14px;
+    cursor:pointer;
+    letter-spacing:0.05em;
+  }
+  .copy-btn:hover{ border-color:var(--amber); background:rgba(232,185,35,0.08); }
+  .result .status{
+    margin-top:10px;
+    font-size:11px;
+    color:var(--text-dim);
+  }
+  .result.error{
+    border-color:var(--error);
+    background:rgba(255,122,122,0.06);
+  }
+  .result.error .checksum{ color:var(--error); font-size:14px; letter-spacing:0; font-weight:500; }
+
+  .computing{
+    color:var(--cyan);
+    font-size:12px;
+    margin-top:14px;
+    display:none;
+  }
+  .computing.show{ display:block; }
+
+  .footnote{
+    margin-top:26px;
+    padding-top:16px;
+    border-top:1px dashed var(--line-dim);
+    font-size:11px;
+    line-height:1.7;
+    color:var(--text-dim);
+  }
+  .footnote b{ color:var(--text); }
+  .footnote code{ color:var(--cyan); }
+
+  a{ color:var(--cyan); }
+</style>
+</head>
+<body>
+<div class="frame">
+
+  <div class="titlebar">
+    <span class="name">EXLIBRYS.EXE<span class="blink"></span></span>
+    <span class="meta">checksum utility — browser build</span>
+  </div>
+
+  <div class="window">
+    <div class="window-inner">
+
+      <h1 class="hero">Ex Libris checksum</h1>
+      <p class="hero-sub">
+        Reimplementation of the <b>Exl_win.exe</b> checksum algorithm, running entirely
+        client-side. Nothing you drop here leaves this tab.
+      </p>
+
+      <div class="result" id="result">
+        <div class="label">checksum</div>
+        <div class="checksum-row">
+          <span class="checksum" id="checksumOut">————-————</span>
+          <button class="copy-btn" id="copyBtn" type="button">copy</button>
+        </div>
+        <div class="status" id="resultStatus"></div>
+      </div>
+
+      <p class="section-label">source file</p>
+
+      <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Drop a file here or click to browse">
+        <div class="glyph">[ ▤ ]</div>
+        <div class="primary">Drag a file here, or click to browse</div>
+        <div class="secondary">Read locally — never uploaded anywhere</div>
+        <input type="file" id="fileInput">
+      </div>
+
+      <div class="filecard" id="filecard">
+        <div class="fname" id="fc-name">—</div>
+        <div class="row"><span>size</span><b id="fc-size">—</b></div>
+        <div class="row"><span>last modified (as reported by browser)</span><b id="fc-mtime">—</b></div>
+        <button class="swap-btn" id="swapBtn" type="button">choose a different file</button>
+      </div>
+
+      <hr class="rule">
+
+      <fieldset>
+        <p class="section-label">name used in checksum</p>
+        <label class="field-label" for="nameInput">filename string (the "name-sum" term)</label>
+        <input type="text" id="nameInput" placeholder="drop a file first…" disabled>
+        <p class="hint">
+          Defaults to the file's own name. Change this if the file was renamed and you
+          need to reproduce the checksum it would have had under its <b>original</b> Windows filename.
+        </p>
+      </fieldset>
+
+      <fieldset>
+        <p class="section-label">win32 file attributes</p>
+        <div class="attr-grid" id="attrGrid"><!-- injected --></div>
+        <div class="hexline">combined value: <span class="val" id="attrHex">0x20</span></div>
+        <p class="hint">
+          Browsers can't read real Windows attribute bits (hidden / system / archive…), so this
+          starts on the ordinary-file default, <b>ARCHIVE (0x20)</b>. Check the boxes that match the
+          file's real attributes on its original machine for an exact match.
+        </p>
+      </fieldset>
+
+      <details class="advanced">
+        <summary>advanced overrides ▾</summary>
+        <div class="advanced-grid">
+          <div>
+            <label class="field-label" for="ageInput">last-modified date &amp; time (local)</label>
+            <input type="datetime-local" id="ageInput" step="1" disabled>
+            <p class="hint">Prefilled from the file's reported timestamp. Edit it if you know the file's true original Windows mtime.</p>
+          </div>
+          <div>
+            <label class="field-label" for="sizeInput">file size override (bytes)</label>
+            <input type="number" id="sizeInput" min="0" disabled placeholder="actual size used by default">
+            <p class="hint">Rarely needed — only for reproducing a checksum against content that isn't literally this file on disk.</p>
+          </div>
+        </div>
+      </details>
+
+      <button class="compute-btn" id="computeBtn" disabled>Compute checksum</button>
+      <div class="computing" id="computing">computing… folding histogram into accumulator</div>
+
+      <div class="footnote">
+        <b>How this works:</b> an accumulator is built from the file's modified time (with a
+        confirmed 2-second correction applied, since Exl_win.exe's internal clock consistently
+        runs 2 seconds behind whatever the OS reports), attribute flags, size, and the
+        code-page-1251 byte-sum of its filename, then folded through a 360-bucket,
+        golden-ratio-weighted histogram of the file's own bytes. The result is formatted the way
+        Borland's <code>Str(Extended)</code> would, 10 of its digits are packed into 8 base-32
+        symbols, and a dash lands in the middle. Full derivation notes live in the original
+        <code>exlibrys.py</code> reverse-engineering script this page is ported from. Matches
+        depend on the browser reporting the file's true original Windows timestamp — copies,
+        re-saves, or re-uploads may reset it, in which case use the override field above.
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- constants (mirrors exlibrys.py) ----------
+  const ALPHABET = "0123456789ABCDEFGHKLMNPRSTUVWXYZ";
+  const PI_OVER_128 = Math.PI / 128;
+  const HAND_PI_OVER_180 = 0.01746;
+  const GOLDEN = 0.618;
+  const GOLDEN_COMPLEMENT = 0.236;
+  const NUM_BUCKETS = 360;
+
+  const ATTR_FLAGS = [
+    { label: "READONLY",      hex: 0x0001, def: false },
+    { label: "HIDDEN",        hex: 0x0002, def: false },
+    { label: "SYSTEM",        hex: 0x0004, def: false },
+    { label: "DIRECTORY",     hex: 0x0010, def: false },
+    { label: "ARCHIVE",       hex: 0x0020, def: true  },
+    { label: "NORMAL",        hex: 0x0080, def: false },
+    { label: "TEMPORARY",     hex: 0x0100, def: false },
+    { label: "REPARSE_POINT", hex: 0x0400, def: false },
+    { label: "COMPRESSED",    hex: 0x0800, def: false },
+    { label: "ENCRYPTED",     hex: 0x2000, def: false },
+  ];
+
+  // ---------- cp1251 encoding (unicode codepoint -> single byte) ----------
+  const CP1251_SPECIAL = {
+    0x0402:0x80,0x0403:0x81,0x201A:0x82,0x0453:0x83,0x201E:0x84,0x2026:0x85,
+    0x2020:0x86,0x2021:0x87,0x20AC:0x88,0x2030:0x89,0x0409:0x8A,0x2039:0x8B,
+    0x040A:0x8C,0x040C:0x8D,0x040B:0x8E,0x040F:0x8F,0x0452:0x90,0x2018:0x91,
+    0x2019:0x92,0x201C:0x93,0x201D:0x94,0x2022:0x95,0x2013:0x96,0x2014:0x97,
+    0x2122:0x99,0x0459:0x9A,0x203A:0x9B,0x045A:0x9C,0x045C:0x9D,0x045B:0x9E,
+    0x045F:0x9F,0x00A0:0xA0,0x040E:0xA1,0x045E:0xA2,0x0408:0xA3,0x00A4:0xA4,
+    0x0490:0xA5,0x00A6:0xA6,0x00A7:0xA7,0x0401:0xA8,0x00A9:0xA9,0x0404:0xAA,
+    0x00AB:0xAB,0x00AC:0xAC,0x00AD:0xAD,0x00AE:0xAE,0x0407:0xAF,0x00B0:0xB0,
+    0x00B1:0xB1,0x0406:0xB2,0x0456:0xB3,0x0491:0xB4,0x00B5:0xB5,0x00B6:0xB6,
+    0x00B7:0xB7,0x0451:0xB8,0x2116:0xB9,0x0454:0xBA,0x00BB:0xBB,0x0458:0xBC,
+    0x0405:0xBD,0x0455:0xBE,0x0457:0xBF,
+  };
+
+  function cp1251Byte(codePoint){
+    if (codePoint < 0x80) return codePoint;
+    if (Object.prototype.hasOwnProperty.call(CP1251_SPECIAL, codePoint)) return CP1251_SPECIAL[codePoint];
+    if (codePoint >= 0x0410 && codePoint <= 0x044F) return 0xC0 + (codePoint - 0x0410);
+    return 0x3F; // '?' — matches Python's errors="replace"
+  }
+
+  function nameSumBytes(name){
+    let sum = 0;
+    for (const ch of name) sum += cp1251Byte(ch.codePointAt(0));
+    return sum;
+  }
+
+  // ---------- FileAge (Delphi DOS-packed date/time) ----------
+  function fileAgeDosFromDate(date){
+    const hour = date.getHours(), min = date.getMinutes(), sec = date.getSeconds();
+    const year = date.getFullYear(), mon = date.getMonth() + 1, day = date.getDate();
+    const dosTime = hour * 2048 + min * 32 + Math.floor(sec / 2);        // hour<<11 | min<<5 | sec/2
+    const dosDate = (year - 1980) * 512 + mon * 32 + day;                  // (year-1980)<<9 | mon<<5 | day
+    return dosDate * 65536 + dosTime;                                       // dosDate<<16 | dosTime
+  }
+
+  // CONFIRMED VIA REAL-WORLD TESTING: Exl_win.exe's effective last-write time is
+  // consistently exactly 2 real seconds EARLIER than what the OS reports (mirrors
+  // file_age_dos() in exlibrys.py). Applied uniformly to whatever last-modified
+  // date/time is in effect - detected or manually entered - since that field always
+  // represents a real-world OS-level timestamp, not an already-corrected raw value.
+  function fileAgeDosWithCorrection(date){
+    return fileAgeDosFromDate(new Date(date.getTime() - 2000));
+  }
+
+  // ---------- round-half-to-even, matching Delphi's Round() / Python's round() ----------
+  function delphiRound(x){
+    const floor = Math.floor(x);
+    const diff = x - floor;
+    if (diff < 0.5) return floor;
+    if (diff > 0.5) return floor + 1;
+    return (floor % 2 === 0) ? floor : floor + 1;
+  }
+
+  // ---------- Borland Str(Extended) fixed-format scientific notation ----------
+  function borlandStrExtended(value){
+    if (value === 0) return " " + "0." + "0".repeat(14) + "E+0000";
+    const sign = value < 0 ? "-" : " ";
+    const av = Math.abs(value);
+    let exp = Math.floor(Math.log10(av));
+    let mantissa = av / Math.pow(10, exp);
+    let mantissaStr = mantissa.toFixed(14);
+    if (parseFloat(mantissaStr) >= 10.0) {
+      exp += 1;
+      mantissa = av / Math.pow(10, exp);
+      mantissaStr = mantissa.toFixed(14);
+    }
+    const expSign = exp >= 0 ? "+" : "-";
+    const expStr = String(Math.abs(exp)).padStart(4, "0");
+    return sign + mantissaStr + "E" + expSign + expStr;
+  }
+
+  function packDigitsToBase32(digits){
+    let bits = "";
+    for (const c of digits) bits += parseInt(c, 10).toString(2).padStart(4, "0");
+    let out = "";
+    for (let i = 0; i < bits.length; i += 5) out += ALPHABET[parseInt(bits.substr(i, 5), 2)];
+    return out;
+  }
+
+  // ---------- core checksum ----------
+  function computeChecksumSync(bytes, fileSize, nameForSum, fileAge, attributes){
+    const N = fileSize;
+    const P = delphiRound(N * GOLDEN);
+    const histogram = new Float64Array(NUM_BUCKETS);
+    const bytesRead = bytes.length;
+
+    for (let i = 1; i <= bytesRead; i++){
+      const b = bytes[i - 1];
+      let bucket = delphiRound(b * PI_OVER_128 / HAND_PI_OVER_180);
+      if (bucket < 0) bucket = 0;
+      if (bucket > NUM_BUCKETS - 1) bucket = NUM_BUCKETS - 1;
+
+      let weight;
+      if (P !== 0 && i <= P) {
+        weight = (i * GOLDEN_COMPLEMENT) / P;
+      } else {
+        const denom = N - P + 1;
+        weight = denom !== 0 ? ((N - i + 1) * GOLDEN_COMPLEMENT) / denom : 0;
+      }
+      histogram[bucket] += weight;
+    }
+
+    let acc = fileAge + attributes + N + nameSumBytes(nameForSum) + 1; // +1 = confirmed accumulator fudge
+    let accFloat = acc;
+    for (let k = 0; k < NUM_BUCKETS; k++) accFloat += histogram[k] * (2 * k + 1);
+
+    const s = borlandStrExtended(accFloat);
+    const digitWindow = s.substring(7, 17);
+    if (!/^[0-9]{10}$/.test(digitWindow)) {
+      throw new Error("Unexpected value magnitude — digit window was " + JSON.stringify(digitWindow));
+    }
+    const encoded = packDigitsToBase32(digitWindow);
+    return encoded.slice(0, 4) + "-" + encoded.slice(4);
+  }
+
+  // ---------- UI wiring ----------
+  const dropzone = document.getElementById("dropzone");
+  const fileInput = document.getElementById("fileInput");
+  const filecard = document.getElementById("filecard");
+  const fcName = document.getElementById("fc-name");
+  const fcSize = document.getElementById("fc-size");
+  const fcMtime = document.getElementById("fc-mtime");
+  const swapBtn = document.getElementById("swapBtn");
+  const nameInput = document.getElementById("nameInput");
+  const ageInput = document.getElementById("ageInput");
+  const sizeInput = document.getElementById("sizeInput");
+  const attrGrid = document.getElementById("attrGrid");
+  const attrHex = document.getElementById("attrHex");
+  const computeBtn = document.getElementById("computeBtn");
+  const computing = document.getElementById("computing");
+  const result = document.getElementById("result");
+  const checksumOut = document.getElementById("checksumOut");
+  const resultStatus = document.getElementById("resultStatus");
+  const copyBtn = document.getElementById("copyBtn");
+
+  let currentBytes = null;
+  let currentFile = null;
+  let debounceTimer = null;
+
+  // build attribute checkboxes
+  ATTR_FLAGS.forEach((flag, idx) => {
+    const id = "attr-" + idx;
+    const wrap = document.createElement("label");
+    wrap.className = "attr-item" + (flag.def ? " active" : "");
+    wrap.setAttribute("for", id);
+    wrap.innerHTML =
+      '<input type="checkbox" id="' + id + '" data-hex="' + flag.hex + '"' + (flag.def ? " checked" : "") + '>' +
+      '<span>' + flag.label + '</span>' +
+      '<span class="code">0x' + flag.hex.toString(16).toUpperCase().padStart(2, "0") + '</span>';
+    attrGrid.appendChild(wrap);
+  });
+
+  function pad(n){ return String(n).padStart(2, "0"); }
+  function toDatetimeLocalValue(date){
+    return date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate()) +
+      "T" + pad(date.getHours()) + ":" + pad(date.getMinutes()) + ":" + pad(date.getSeconds());
+  }
+  function humanSize(bytes){
+    if (bytes < 1024) return bytes + " B";
+    const units = ["KB", "MB", "GB", "TB"];
+    let val = bytes, i = -1;
+    do { val /= 1024; i++; } while (val >= 1024 && i < units.length - 1);
+    return val.toFixed(val < 10 ? 2 : 1) + " " + units[i] + " (" + bytes.toLocaleString() + " bytes)";
+  }
+
+  function updateAttrHex(){
+    let sum = 0;
+    attrGrid.querySelectorAll("input[type=checkbox]").forEach(cb => {
+      cb.closest(".attr-item").classList.toggle("active", cb.checked);
+      if (cb.checked) sum += parseInt(cb.dataset.hex, 10);
+    });
+    attrHex.textContent = "0x" + sum.toString(16).toUpperCase().padStart(2, "0");
+    return sum;
+  }
+
+  attrGrid.addEventListener("change", (e) => {
+    const clicked = e.target;
+    if (clicked && clicked.dataset && parseInt(clicked.dataset.hex, 10) === 0x80 && clicked.checked) {
+      // NORMAL is only valid alone
+      attrGrid.querySelectorAll("input[type=checkbox]").forEach(cb => {
+        if (cb !== clicked) cb.checked = false;
+      });
+    } else if (clicked && clicked.checked) {
+      const normalBox = Array.from(attrGrid.querySelectorAll("input[type=checkbox]"))
+        .find(cb => parseInt(cb.dataset.hex, 10) === 0x80);
+      if (normalBox) normalBox.checked = false;
+    }
+    updateAttrHex();
+    scheduleCompute();
+  });
+
+  function enableInputs(enabled){
+    [nameInput, ageInput, sizeInput, computeBtn].forEach(el => el.disabled = !enabled);
+  }
+
+  function loadFile(file){
+    currentFile = file;
+    file.arrayBuffer().then(buf => {
+      currentBytes = new Uint8Array(buf);
+
+      fcName.textContent = file.name;
+      fcSize.textContent = humanSize(file.size);
+      const mdate = new Date(file.lastModified);
+      fcMtime.textContent = mdate.toString();
+      filecard.classList.add("show");
+
+      nameInput.value = file.name;
+      ageInput.value = toDatetimeLocalValue(mdate);
+      sizeInput.value = file.size;
+      sizeInput.placeholder = "actual: " + file.size;
+
+      enableInputs(true);
+      result.classList.remove("show");
+      scheduleCompute();
+    }).catch(err => {
+      alert("Couldn't read that file: " + err.message);
+    });
+  }
+
+  dropzone.addEventListener("click", () => fileInput.click());
+  dropzone.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); }
+  });
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files && fileInput.files[0]) loadFile(fileInput.files[0]);
+  });
+  ["dragenter", "dragover"].forEach(evt => {
+    dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.add("drag"); });
+  });
+  ["dragleave", "drop"].forEach(evt => {
+    dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.remove("drag"); });
+  });
+  dropzone.addEventListener("drop", (e) => {
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) loadFile(f);
+  });
+  swapBtn.addEventListener("click", () => fileInput.click());
+
+  function scheduleCompute(){
+    if (!currentBytes) return;
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(runCompute, 180);
+  }
+  [nameInput, ageInput, sizeInput].forEach(el => el.addEventListener("input", scheduleCompute));
+  computeBtn.addEventListener("click", runCompute);
+
+  function runCompute(){
+    if (!currentBytes) return;
+    computeBtn.disabled = true;
+    computing.classList.add("show");
+    result.classList.remove("show", "error");
+
+    setTimeout(() => {
+      try {
+        const nameForSum = nameInput.value || currentFile.name;
+        const ageDate = ageInput.value ? new Date(ageInput.value) : new Date(currentFile.lastModified);
+        const fileAge = fileAgeDosWithCorrection(ageDate);
+        const attributes = updateAttrHex();
+        const fileSize = sizeInput.value !== "" ? parseInt(sizeInput.value, 10) : currentFile.size;
+
+        const checksum = computeChecksumSync(currentBytes, fileSize, nameForSum, fileAge, attributes);
+
+        checksumOut.textContent = checksum;
+        resultStatus.textContent = "computed from " + currentBytes.length.toLocaleString() + " bytes read";
+        result.classList.add("show");
+        result.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      } catch (err) {
+        checksumOut.textContent = "error";
+        resultStatus.textContent = err.message;
+        result.classList.add("show", "error");
+        result.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      } finally {
+        computing.classList.remove("show");
+        computeBtn.disabled = false;
+      }
+    }, 20);
+  }
+
+  copyBtn.addEventListener("click", () => {
+    const text = checksumOut.textContent;
+    if (!text || text.indexOf("—") !== -1) return;
+    navigator.clipboard.writeText(text).then(() => {
+      const original = copyBtn.textContent;
+      copyBtn.textContent = "copied";
+      setTimeout(() => { copyBtn.textContent = original; }, 1200);
+    });
+  });
+
+  updateAttrHex();
+})();
+</script>
+</body>
+</html>
