@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="uk" id="htmlRoot">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>EXLIBRYS.EXE — checksum utility</title>
+<title id="pageTitle">EXLIBRYS.EXE — утиліта контрольної суми</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
@@ -89,6 +89,22 @@
     color:var(--text-dim);
     letter-spacing:0.04em;
   }
+  .titlebar-right{
+    display:flex;
+    align-items:center;
+    gap:12px;
+  }
+  .lang-toggle{
+    background:none;
+    border:1px solid var(--line-dim);
+    color:var(--text-dim);
+    font-family:'JetBrains Mono', monospace;
+    font-size:10px;
+    letter-spacing:0.08em;
+    padding:4px 9px;
+    cursor:pointer;
+  }
+  .lang-toggle:hover{ border-color:var(--cyan); color:var(--cyan); }
   @keyframes blink{ 50%{ opacity:0; } }
   @media (prefers-reduced-motion: reduce){
     .titlebar .name .blink{ animation:none; opacity:1; }
@@ -111,17 +127,29 @@
 
   h1.hero{
     font-family:'Space Mono', monospace;
-    font-size:clamp(28px, 6vw, 40px);
-    letter-spacing:0.03em;
     margin:0 0 4px;
     color:var(--text);
+    line-height:1.15;
+  }
+  h1.hero .hero-main{
+    display:block;
+    font-size:clamp(26px, 8vw, 40px);
+    letter-spacing:0.03em;
+  }
+  h1.hero .hero-subheading{
+    display:block;
+    font-size:clamp(13px, 3vw, 16px);
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--cyan);
+    font-weight:400;
+    margin-top:3px;
   }
   .hero-sub{
     color:var(--text-dim);
     font-size:13px;
     margin:0 0 22px;
     line-height:1.6;
-    max-width:56ch;
   }
   .hero-sub b{ color:var(--amber); font-weight:600; }
 
@@ -181,13 +209,17 @@
   .filecard.show{ display:block; }
   .filecard .row{
     display:flex;
-    justify-content:space-between;
-    gap:12px;
-    font-size:12px;
-    padding:3px 0;
+    flex-direction:column;
+    gap:2px;
+    padding:6px 0;
+  }
+  .filecard .row span{
+    font-size:10px;
+    letter-spacing:0.06em;
+    text-transform:uppercase;
     color:var(--text-dim);
   }
-  .filecard .row b{ color:var(--text); font-weight:500; }
+  .filecard .row b{ color:var(--text); font-weight:500; font-size:12px; }
   .filecard .fname{
     color:var(--amber);
     font-weight:600;
@@ -206,11 +238,6 @@
   }
   .swap-btn:hover{ border-color:var(--cyan); color:var(--cyan); }
 
-  fieldset{
-    border:none;
-    padding:0;
-    margin:0 0 20px;
-  }
   label.field-label{
     display:block;
     font-size:11px;
@@ -274,8 +301,11 @@
 
   details.advanced{
     border:1px solid var(--line-dim);
-    padding:2px 14px 14px;
-    margin-top:4px;
+    padding:0 14px;
+    margin-top:10px;
+  }
+  details.advanced[open]{
+    padding-bottom:14px;
   }
   details.advanced summary{
     cursor:pointer;
@@ -284,8 +314,23 @@
     color:var(--text-dim);
     padding:10px 0;
     text-transform:uppercase;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:10px;
   }
   details.advanced summary:hover{ color:var(--cyan); }
+  details.advanced .summary-val{
+    color:var(--amber);
+    font-weight:700;
+    letter-spacing:0.05em;
+    text-transform:none;
+    font-size:12px;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  details.advanced > *:not(summary){ margin-top:2px; }
   .advanced-grid{
     display:grid;
     gap:14px;
@@ -351,18 +396,41 @@
     padding:8px 14px;
     cursor:pointer;
     letter-spacing:0.05em;
+    flex-shrink:0;
   }
   .copy-btn:hover{ border-color:var(--amber); background:rgba(232,185,35,0.08); }
   .result .status{
     margin-top:10px;
     font-size:11px;
     color:var(--text-dim);
+    display:none;
+  }
+  .citation-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    margin-top:14px;
+    padding-top:14px;
+    border-top:1px dashed var(--amber-dim);
+    flex-wrap:wrap;
+  }
+  .citation{
+    font-family:'JetBrains Mono', monospace;
+    font-size:12px;
+    color:var(--text);
+    background:none;
+    word-break:break-all;
   }
   .result.error{
     border-color:var(--error);
     background:rgba(255,122,122,0.06);
   }
   .result.error .checksum{ color:var(--error); font-size:14px; letter-spacing:0; font-weight:500; }
+  .result.error .status{
+    display:block;
+    color:var(--error);
+  }
 
   .computing{
     color:var(--cyan);
@@ -372,16 +440,7 @@
   }
   .computing.show{ display:block; }
 
-  .footnote{
-    margin-top:26px;
-    padding-top:16px;
-    border-top:1px dashed var(--line-dim);
-    font-size:11px;
-    line-height:1.7;
-    color:var(--text-dim);
-  }
-  .footnote b{ color:var(--text); }
-  .footnote code{ color:var(--cyan); }
+  code{ color:var(--cyan); }
 
   a{ color:var(--cyan); }
 </style>
@@ -391,97 +450,91 @@
 
   <div class="titlebar">
     <span class="name">EXLIBRYS.EXE<span class="blink"></span></span>
-    <span class="meta">checksum utility — browser build</span>
+    <div class="titlebar-right">
+      <span class="meta" data-i18n="meta"></span>
+      <button id="langToggle" class="lang-toggle" type="button">EN</button>
+    </div>
   </div>
 
   <div class="window">
     <div class="window-inner">
 
-      <h1 class="hero">Ex Libris checksum</h1>
-      <p class="hero-sub">
-        Reimplementation of the <b>Exl_win.exe</b> checksum algorithm, running entirely
-        client-side. Nothing you drop here leaves this tab.
-      </p>
+      <h1 class="hero">
+        <span class="hero-main" data-i18n="heroTitleMain"></span>
+        <span class="hero-subheading" data-i18n="heroTitleSub"></span>
+      </h1>
+      <p class="hero-sub" data-i18n-html="heroSub"></p>
 
       <div class="result" id="result">
-        <div class="label">checksum</div>
+        <div class="label" data-i18n="checksumLabel"></div>
         <div class="checksum-row">
           <span class="checksum" id="checksumOut">————-————</span>
-          <button class="copy-btn" id="copyBtn" type="button">copy</button>
+          <button class="copy-btn" id="copyBtn" type="button" data-i18n="copy"></button>
         </div>
         <div class="status" id="resultStatus"></div>
+
+        <div class="citation-row">
+          <code class="citation" id="citationOut">—</code>
+          <button class="copy-btn" id="copyCitationBtn" type="button" data-i18n="copy"></button>
+        </div>
       </div>
 
-      <p class="section-label">source file</p>
+      <p class="section-label" data-i18n="sourceFileLabel"></p>
 
-      <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Drop a file here or click to browse">
+      <div class="dropzone" id="dropzone" tabindex="0" role="button">
         <div class="glyph">[ ▤ ]</div>
-        <div class="primary">Drag a file here, or click to browse</div>
-        <div class="secondary">Read locally — never uploaded anywhere</div>
+        <div class="primary" data-i18n="dropPrimary"></div>
+        <div class="secondary" data-i18n="dropSecondary"></div>
         <input type="file" id="fileInput">
       </div>
 
       <div class="filecard" id="filecard">
         <div class="fname" id="fc-name">—</div>
-        <div class="row"><span>size</span><b id="fc-size">—</b></div>
-        <div class="row"><span>last modified (as reported by browser)</span><b id="fc-mtime">—</b></div>
-        <button class="swap-btn" id="swapBtn" type="button">choose a different file</button>
+        <div class="row"><span data-i18n="sizeRowLabel"></span><b id="fc-size">—</b></div>
+        <div class="row"><span data-i18n="sizeExactRowLabel"></span><b id="fc-size-exact">—</b></div>
+        <div class="row"><span data-i18n="mtimeRowLabel"></span><b id="fc-mtime">—</b></div>
+        <button class="swap-btn" id="swapBtn" type="button" data-i18n="swapBtn"></button>
       </div>
 
       <hr class="rule">
 
-      <fieldset>
-        <p class="section-label">name used in checksum</p>
-        <label class="field-label" for="nameInput">filename string (the "name-sum" term)</label>
-        <input type="text" id="nameInput" placeholder="drop a file first…" disabled>
-        <p class="hint">
-          Defaults to the file's own name. Change this if the file was renamed and you
-          need to reproduce the checksum it would have had under its <b>original</b> Windows filename.
-        </p>
-      </fieldset>
+      <details class="advanced" id="nameDetails">
+        <summary><span data-i18n="nameSummaryLabel"></span> <span class="summary-val" id="nameSummaryVal">—</span></summary>
+        <label class="field-label" for="nameInput" data-i18n="nameFieldLabel"></label>
+        <input type="text" id="nameInput" disabled>
+        <p class="hint" data-i18n-html="nameHint"></p>
+      </details>
 
-      <fieldset>
-        <p class="section-label">win32 file attributes</p>
+      <details class="advanced" id="attrDetails">
+        <summary><span data-i18n="attrSummaryLabel"></span> <span class="summary-val" id="attrSummaryVal">0x20</span></summary>
         <div class="attr-grid" id="attrGrid"><!-- injected --></div>
-        <div class="hexline">combined value: <span class="val" id="attrHex">0x20</span></div>
-        <p class="hint">
-          Browsers can't read real Windows attribute bits (hidden / system / archive…), so this
-          starts on the ordinary-file default, <b>ARCHIVE (0x20)</b>. Check the boxes that match the
-          file's real attributes on its original machine for an exact match.
-        </p>
-      </fieldset>
+        <div class="hexline"><span data-i18n="attrHexlineLabel"></span> <span class="val" id="attrHex">0x20</span></div>
+        <p class="hint" data-i18n-html="attrHint"></p>
+      </details>
 
       <details class="advanced">
-        <summary>advanced overrides ▾</summary>
+        <summary data-i18n="advancedSummary"></summary>
         <div class="advanced-grid">
           <div>
-            <label class="field-label" for="ageInput">last-modified date &amp; time (local)</label>
+            <label class="field-label" for="ageInput" data-i18n="ageFieldLabel"></label>
             <input type="datetime-local" id="ageInput" step="1" disabled>
-            <p class="hint">Prefilled from the file's reported timestamp. Edit it if you know the file's true original Windows mtime.</p>
+            <p class="hint" data-i18n="ageHint"></p>
           </div>
           <div>
-            <label class="field-label" for="sizeInput">file size override (bytes)</label>
-            <input type="number" id="sizeInput" min="0" disabled placeholder="actual size used by default">
-            <p class="hint">Rarely needed — only for reproducing a checksum against content that isn't literally this file on disk.</p>
+            <label class="field-label" for="sizeInput" data-i18n="sizeFieldLabel"></label>
+            <input type="number" id="sizeInput" min="0" disabled>
+            <p class="hint" data-i18n="sizeHint"></p>
           </div>
         </div>
       </details>
 
-      <button class="compute-btn" id="computeBtn" disabled>Compute checksum</button>
-      <div class="computing" id="computing">computing… folding histogram into accumulator</div>
+      <button class="compute-btn" id="computeBtn" disabled data-i18n="computeBtn"></button>
+      <div class="computing" id="computing" data-i18n="computingText"></div>
 
-      <div class="footnote">
-        <b>How this works:</b> an accumulator is built from the file's modified time (with a
-        confirmed 2-second correction applied, since Exl_win.exe's internal clock consistently
-        runs 2 seconds behind whatever the OS reports), attribute flags, size, and the
-        code-page-1251 byte-sum of its filename, then folded through a 360-bucket,
-        golden-ratio-weighted histogram of the file's own bytes. The result is formatted the way
-        Borland's <code>Str(Extended)</code> would, 10 of its digits are packed into 8 base-32
-        symbols, and a dash lands in the middle. Full derivation notes live in the original
-        <code>exlibrys.py</code> reverse-engineering script this page is ported from. Matches
-        depend on the browser reporting the file's true original Windows timestamp — copies,
-        re-saves, or re-uploads may reset it, in which case use the override field above.
-      </div>
+      <details class="advanced">
+        <summary data-i18n="howSummary"></summary>
+        <p class="hint" data-i18n-html="howHint"></p>
+      </details>
 
     </div>
   </div>
@@ -490,6 +543,147 @@
 <script>
 (function(){
   "use strict";
+
+  // ---------- i18n ----------
+  const TRANSLATIONS = {
+    ua: {
+      meta: "утиліта контрольної суми — браузерна версія",
+      heroTitleMain: "Екслібрис",
+      heroTitleSub: "контрольна сума",
+      heroSubHtml: "Реалізація алгоритму контрольної суми <b>Exl_win.exe</b>, що працює повністю " +
+        "на стороні браузера. Ніщо з того, що ви сюди додасте, нікуди не передається.",
+      checksumLabel: "контрольна сума",
+      copy: "копіювати",
+      copied: "скопійовано",
+      sourceFileLabel: "вихідний файл",
+      dropPrimary: "Перетягніть файл сюди або натисніть, щоб обрати",
+      dropSecondary: "Обробляється локально — нікуди не завантажується",
+      dropAriaLabel: "Перетягніть файл сюди або натисніть, щоб обрати",
+      sizeRowLabel: "розмір",
+      sizeExactRowLabel: "розмір (точно)",
+      exactBytesUnit: "байт",
+      mtimeRowLabel: "дата останньої зміни (за даними браузера)",
+      swapBtn: "обрати інший файл",
+      nameSummaryLabel: "ім'я файлу для контрольної суми",
+      nameFieldLabel: "рядок імені файлу (складова «сума імені»)",
+      namePlaceholder: "спочатку додайте файл…",
+      nameHintHtml: "За замовчуванням — власне ім'я файлу. Змініть це поле, якщо файл було " +
+        "перейменовано і потрібно відтворити контрольну суму, яку він мав під " +
+        "своїм <b>оригінальним</b> іменем у Windows.",
+      attrSummaryLabel: "атрибути файлу win32",
+      attrHexlineLabel: "сумарне значення:",
+      attrHintHtml: "Браузери не можуть прочитати реальні атрибути Windows (прихований / системний / " +
+        "архівний тощо), тож тут використано типове значення для звичайного файлу — " +
+        "<b>ARCHIVE (0x20)</b>. Позначте прапорці, що відповідають реальним атрибутам " +
+        "файлу на початковій машині, для точного збігу.",
+      advancedSummary: "додаткові налаштування",
+      ageFieldLabel: "дата й час останньої зміни (локальний час)",
+      ageHint: "Заповнюється з часової мітки, яку повідомив файл. Змініть, якщо знаєте справжній оригінальний час зміни у Windows.",
+      sizeFieldLabel: "перевизначення розміру файлу (байти)",
+      sizePlaceholder: "за замовчуванням — фактичний розмір",
+      sizeHint: "Рідко потрібно — лише для відтворення контрольної суми для вмісту, якого немає буквально в цьому файлі на диску.",
+      computeBtn: "Обчислити контрольну суму",
+      computingText: "обчислення… згортання гістограми в акумулятор",
+      howSummary: "як це працює",
+      howHintHtml: "Акумулятор будується з часу зміни файлу (із підтвердженою корекцією на 2 секунди, " +
+        "оскільки внутрішній годинник Exl_win.exe стабільно відстає на 2 секунди від того, що " +
+        "повідомляє ОС), атрибутів, розміру та суми байтів імені файлу в кодуванні cp1251, після " +
+        "чого згортається через 360-кошикову гістограму із золотим перетином на основі байтів " +
+        "самого файлу. Результат форматується так, як це робить Borland-функція " +
+        "<code>Str(Extended)</code>, 10 її цифр упаковуються у 8 символів base-32, а посередині " +
+        "додається дефіс. Повні деталі реконструкції — в оригінальному скрипті " +
+        "<code>exlibrys.py</code>, з якого портовано цю сторінку. Збіг залежить від того, чи " +
+        "браузер повідомляє справжню оригінальну часову мітку Windows — копіювання, повторне " +
+        "збереження чи повторне завантаження можуть її скинути, тоді використайте поле " +
+        "перевизначення вище.",
+      actualSizePrefix: "фактичний: ",
+      couldntReadFile: "Не вдалося прочитати файл: ",
+      dateLocale: "uk-UA",
+      sizeUnitBytes: "Б",
+      sizeUnits: ["КБ", "МБ", "ГБ", "ТБ"],
+    },
+    en: {
+      meta: "checksum utility — browser build",
+      heroTitleMain: "Ex Libris",
+      heroTitleSub: "checksum",
+      heroSubHtml: "Reimplementation of the <b>Exl_win.exe</b> checksum algorithm, running entirely " +
+        "client-side. Nothing you drop here leaves this tab.",
+      checksumLabel: "checksum",
+      copy: "copy",
+      copied: "copied",
+      sourceFileLabel: "source file",
+      dropPrimary: "Drag a file here, or click to browse",
+      dropSecondary: "Read locally — never uploaded anywhere",
+      dropAriaLabel: "Drop a file here or click to browse",
+      sizeRowLabel: "size",
+      sizeExactRowLabel: "size (exact)",
+      exactBytesUnit: "bytes",
+      mtimeRowLabel: "last modified (as reported by browser)",
+      swapBtn: "choose a different file",
+      nameSummaryLabel: "name used in checksum",
+      nameFieldLabel: "filename string (the \u201cname-sum\u201d term)",
+      namePlaceholder: "drop a file first…",
+      nameHintHtml: "Defaults to the file's own name. Change this if the file was renamed and you " +
+        "need to reproduce the checksum it would have had under its <b>original</b> Windows filename.",
+      attrSummaryLabel: "win32 file attributes",
+      attrHexlineLabel: "combined value:",
+      attrHintHtml: "Browsers can't read real Windows attribute bits (hidden / system / archive…), so this " +
+        "starts on the ordinary-file default, <b>ARCHIVE (0x20)</b>. Check the boxes that match the " +
+        "file's real attributes on its original machine for an exact match.",
+      advancedSummary: "advanced overrides",
+      ageFieldLabel: "last-modified date &amp; time (local)",
+      ageHint: "Prefilled from the file's reported timestamp. Edit it if you know the file's true original Windows mtime.",
+      sizeFieldLabel: "file size override (bytes)",
+      sizePlaceholder: "actual size used by default",
+      sizeHint: "Rarely needed — only for reproducing a checksum against content that isn't literally this file on disk.",
+      computeBtn: "Compute checksum",
+      computingText: "computing… folding histogram into accumulator",
+      howSummary: "how this works",
+      howHintHtml: "An accumulator is built from the file's modified time (with a confirmed 2-second " +
+        "correction applied, since Exl_win.exe's internal clock consistently runs 2 seconds " +
+        "behind whatever the OS reports), attribute flags, size, and the code-page-1251 " +
+        "byte-sum of its filename, then folded through a 360-bucket, golden-ratio-weighted " +
+        "histogram of the file's own bytes. The result is formatted the way Borland's " +
+        "<code>Str(Extended)</code> would, 10 of its digits are packed into 8 base-32 symbols, " +
+        "and a dash lands in the middle. Full derivation notes live in the original " +
+        "<code>exlibrys.py</code> reverse-engineering script this page is ported from. Matches " +
+        "depend on the browser reporting the file's true original Windows timestamp — copies, " +
+        "re-saves, or re-uploads may reset it, in which case use the override field above.",
+      actualSizePrefix: "actual: ",
+      couldntReadFile: "Couldn't read that file: ",
+      dateLocale: "en-US",
+      sizeUnitBytes: "B",
+      sizeUnits: ["KB", "MB", "GB", "TB"],
+    },
+  };
+
+  let currentLang = "ua";
+  function t(key){ return TRANSLATIONS[currentLang][key]; }
+
+  function applyLanguage(lang){
+    currentLang = lang;
+    const dict = TRANSLATIONS[lang];
+    document.getElementById("htmlRoot").lang = lang;
+    document.getElementById("pageTitle").textContent =
+      lang === "ua" ? "EXLIBRYS.EXE — утиліта контрольної суми" : "EXLIBRYS.EXE — checksum utility";
+    document.getElementById("langToggle").textContent = lang === "ua" ? "EN" : "UA";
+
+    document.querySelectorAll("[data-i18n]").forEach(el => {
+      const key = el.getAttribute("data-i18n");
+      if (dict[key] !== undefined) el.textContent = dict[key];
+    });
+    document.querySelectorAll("[data-i18n-html]").forEach(el => {
+      const key = el.getAttribute("data-i18n-html") + "Html";
+      if (dict[key] !== undefined) el.innerHTML = dict[key];
+    });
+
+    document.getElementById("dropzone").setAttribute("aria-label", dict.dropAriaLabel);
+    document.getElementById("nameInput").placeholder = dict.namePlaceholder;
+    document.getElementById("sizeInput").placeholder = dict.sizePlaceholder;
+
+    // re-render anything that depends on live state so labels stay in sync
+    if (typeof refreshLanguageDependentUI === "function") refreshLanguageDependentUI();
+  }
 
   // ---------- constants (mirrors exlibrys.py) ----------
   const ALPHABET = "0123456789ABCDEFGHKLMNPRSTUVWXYZ";
@@ -635,6 +829,7 @@
   const filecard = document.getElementById("filecard");
   const fcName = document.getElementById("fc-name");
   const fcSize = document.getElementById("fc-size");
+  const fcSizeExact = document.getElementById("fc-size-exact");
   const fcMtime = document.getElementById("fc-mtime");
   const swapBtn = document.getElementById("swapBtn");
   const nameInput = document.getElementById("nameInput");
@@ -642,16 +837,23 @@
   const sizeInput = document.getElementById("sizeInput");
   const attrGrid = document.getElementById("attrGrid");
   const attrHex = document.getElementById("attrHex");
+  const attrSummaryVal = document.getElementById("attrSummaryVal");
+  const nameSummaryVal = document.getElementById("nameSummaryVal");
   const computeBtn = document.getElementById("computeBtn");
   const computing = document.getElementById("computing");
   const result = document.getElementById("result");
   const checksumOut = document.getElementById("checksumOut");
   const resultStatus = document.getElementById("resultStatus");
   const copyBtn = document.getElementById("copyBtn");
+  const citationOut = document.getElementById("citationOut");
+  const copyCitationBtn = document.getElementById("copyCitationBtn");
+  const langToggle = document.getElementById("langToggle");
 
   let currentBytes = null;
   let currentFile = null;
   let debounceTimer = null;
+  let lastComputedFileSize = null;
+  let lastComputedChecksum = null;
 
   // build attribute checkboxes
   ATTR_FLAGS.forEach((flag, idx) => {
@@ -672,11 +874,14 @@
       "T" + pad(date.getHours()) + ":" + pad(date.getMinutes()) + ":" + pad(date.getSeconds());
   }
   function humanSize(bytes){
-    if (bytes < 1024) return bytes + " B";
-    const units = ["KB", "MB", "GB", "TB"];
+    if (bytes < 1024) return bytes + " " + t("sizeUnitBytes");
+    const units = t("sizeUnits");
     let val = bytes, i = -1;
     do { val /= 1024; i++; } while (val >= 1024 && i < units.length - 1);
-    return val.toFixed(val < 10 ? 2 : 1) + " " + units[i] + " (" + bytes.toLocaleString() + " bytes)";
+    return val.toFixed(val < 10 ? 2 : 1) + " " + units[i];
+  }
+  function exactSizeText(bytes){
+    return bytes.toLocaleString() + " " + t("exactBytesUnit");
   }
 
   function updateAttrHex(){
@@ -685,7 +890,9 @@
       cb.closest(".attr-item").classList.toggle("active", cb.checked);
       if (cb.checked) sum += parseInt(cb.dataset.hex, 10);
     });
-    attrHex.textContent = "0x" + sum.toString(16).toUpperCase().padStart(2, "0");
+    const hex = "0x" + sum.toString(16).toUpperCase().padStart(2, "0");
+    attrHex.textContent = hex;
+    attrSummaryVal.textContent = hex;
     return sum;
   }
 
@@ -716,20 +923,22 @@
 
       fcName.textContent = file.name;
       fcSize.textContent = humanSize(file.size);
+      fcSizeExact.textContent = exactSizeText(file.size);
       const mdate = new Date(file.lastModified);
-      fcMtime.textContent = mdate.toString();
+      fcMtime.textContent = mdate.toLocaleString(t("dateLocale"));
       filecard.classList.add("show");
 
       nameInput.value = file.name;
+      nameSummaryVal.textContent = file.name;
       ageInput.value = toDatetimeLocalValue(mdate);
       sizeInput.value = file.size;
-      sizeInput.placeholder = "actual: " + file.size;
+      sizeInput.placeholder = t("actualSizePrefix") + file.size;
 
       enableInputs(true);
       result.classList.remove("show");
       scheduleCompute();
     }).catch(err => {
-      alert("Couldn't read that file: " + err.message);
+      alert(t("couldntReadFile") + err.message);
     });
   }
 
@@ -758,6 +967,9 @@
     debounceTimer = setTimeout(runCompute, 180);
   }
   [nameInput, ageInput, sizeInput].forEach(el => el.addEventListener("input", scheduleCompute));
+  nameInput.addEventListener("input", () => {
+    nameSummaryVal.textContent = nameInput.value || currentFile?.name || "—";
+  });
   computeBtn.addEventListener("click", runCompute);
 
   function runCompute(){
@@ -777,12 +989,17 @@
         const checksum = computeChecksumSync(currentBytes, fileSize, nameForSum, fileAge, attributes);
 
         checksumOut.textContent = checksum;
-        resultStatus.textContent = "computed from " + currentBytes.length.toLocaleString() + " bytes read";
+        fcSize.textContent = humanSize(fileSize);
+        fcSizeExact.textContent = exactSizeText(fileSize);
+        lastComputedFileSize = fileSize;
+        lastComputedChecksum = checksum;
+        citationOut.textContent = currentFile.name + ", " + humanSize(fileSize) + ", " + checksum;
         result.classList.add("show");
         result.scrollIntoView({ behavior: "smooth", block: "nearest" });
       } catch (err) {
         checksumOut.textContent = "error";
         resultStatus.textContent = err.message;
+        citationOut.textContent = "—";
         result.classList.add("show", "error");
         result.scrollIntoView({ behavior: "smooth", block: "nearest" });
       } finally {
@@ -792,17 +1009,41 @@
     }, 20);
   }
 
-  copyBtn.addEventListener("click", () => {
-    const text = checksumOut.textContent;
-    if (!text || text.indexOf("—") !== -1) return;
-    navigator.clipboard.writeText(text).then(() => {
-      const original = copyBtn.textContent;
-      copyBtn.textContent = "copied";
-      setTimeout(() => { copyBtn.textContent = original; }, 1200);
+  function wireCopyButton(btn, getText){
+    btn.addEventListener("click", () => {
+      const text = getText();
+      if (!text || text.indexOf("—") !== -1) return;
+      navigator.clipboard.writeText(text).then(() => {
+        const original = btn.textContent;
+        btn.textContent = t("copied");
+        setTimeout(() => { btn.textContent = original; }, 1200);
+      });
     });
+  }
+  wireCopyButton(copyBtn, () => checksumOut.textContent);
+  wireCopyButton(copyCitationBtn, () => citationOut.textContent);
+
+  function refreshLanguageDependentUI(){
+    if (currentFile) {
+      fcMtime.textContent = new Date(currentFile.lastModified).toLocaleString(t("dateLocale"));
+      if (sizeInput.value !== "" && parseInt(sizeInput.value, 10) === currentFile.size) {
+        sizeInput.placeholder = t("actualSizePrefix") + currentFile.size;
+      }
+      const effectiveSize = lastComputedFileSize !== null ? lastComputedFileSize : currentFile.size;
+      fcSize.textContent = humanSize(effectiveSize);
+      fcSizeExact.textContent = exactSizeText(effectiveSize);
+    }
+    if (result.classList.contains("show") && !result.classList.contains("error") && lastComputedFileSize !== null) {
+      citationOut.textContent = currentFile.name + ", " + humanSize(lastComputedFileSize) + ", " + lastComputedChecksum;
+    }
+  }
+
+  langToggle.addEventListener("click", () => {
+    applyLanguage(currentLang === "ua" ? "en" : "ua");
   });
 
   updateAttrHex();
+  applyLanguage("ua");
 })();
 </script>
 </body>
