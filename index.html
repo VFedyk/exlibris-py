@@ -127,7 +127,7 @@
 
   h1.hero{
     font-family:'Space Mono', monospace;
-    margin:0 0 4px;
+    margin:0 0 20px;
     color:var(--text);
     line-height:1.15;
   }
@@ -145,14 +145,6 @@
     font-weight:400;
     margin-top:3px;
   }
-  .hero-sub{
-    color:var(--text-dim);
-    font-size:13px;
-    margin:0 0 22px;
-    line-height:1.6;
-  }
-  .hero-sub b{ color:var(--amber); font-weight:600; }
-
   .rule{
     border:none;
     border-top:1px dashed var(--line-dim);
@@ -197,6 +189,7 @@
   .dropzone .primary{ font-size:14px; color:var(--text); }
   .dropzone .secondary{ font-size:12px; color:var(--text-dim); margin-top:6px; }
   .dropzone input[type=file]{ display:none; }
+  .dropzone-file-input{ display:none; }
 
   /* loaded file card */
   .filecard{
@@ -226,18 +219,6 @@
     font-size:13px;
     word-break:break-all;
   }
-  .swap-btn{
-    background:none;
-    border:1px solid var(--line-dim);
-    color:var(--text-dim);
-    font-family:inherit;
-    font-size:11px;
-    padding:5px 10px;
-    cursor:pointer;
-    margin-top:10px;
-  }
-  .swap-btn:hover{ border-color:var(--cyan); color:var(--cyan); }
-
   label.field-label{
     display:block;
     font-size:11px;
@@ -339,6 +320,27 @@
   @media (min-width:520px){
     .advanced-grid{ grid-template-columns:1fr 1fr; }
   }
+  .subsection{
+    padding-top:14px;
+    margin-top:14px !important;
+    border-top:1px dashed var(--line-dim);
+  }
+  .subsection:first-of-type{
+    padding-top:0;
+    margin-top:2px !important;
+    border-top:none;
+  }
+  .subsection-title{
+    font-size:11px;
+    letter-spacing:0.1em;
+    text-transform:uppercase;
+    color:var(--text-dim);
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:10px;
+    margin-bottom:10px;
+  }
 
   .compute-btn{
     width:100%;
@@ -364,8 +366,13 @@
     background:rgba(232,185,35,0.05);
     padding:18px 20px;
     display:none;
+    transition:border-color .15s ease, background .15s ease;
   }
   .result.show{ display:block; }
+  .result.drag{
+    border-color:var(--cyan);
+    background:rgba(127,224,214,0.06);
+  }
   .result .label{
     font-size:11px;
     letter-spacing:0.15em;
@@ -422,6 +429,17 @@
     background:none;
     word-break:break-all;
   }
+  .drop-hint{
+    margin-top:14px;
+    padding-top:12px;
+    border-top:1px dashed var(--amber-dim);
+    font-size:11px;
+    letter-spacing:0.03em;
+    color:var(--text-dim);
+    text-align:center;
+    cursor:pointer;
+  }
+  .drop-hint:hover{ color:var(--cyan); }
   .result.error{
     border-color:var(--error);
     background:rgba(255,122,122,0.06);
@@ -463,7 +481,6 @@
         <span class="hero-main" data-i18n="heroTitleMain"></span>
         <span class="hero-subheading" data-i18n="heroTitleSub"></span>
       </h1>
-      <p class="hero-sub" data-i18n-html="heroSub"></p>
 
       <div class="result" id="result">
         <div class="label" data-i18n="checksumLabel"></div>
@@ -477,15 +494,20 @@
           <code class="citation" id="citationOut">—</code>
           <button class="copy-btn" id="copyCitationBtn" type="button" data-i18n="copy"></button>
         </div>
+
+        <div class="drop-hint" id="resultDropHint" data-i18n="resultDropHint"></div>
+        <input type="file" id="fileInputResult" class="dropzone-file-input">
       </div>
 
-      <p class="section-label" data-i18n="sourceFileLabel"></p>
+      <div id="dropSection">
+        <p class="section-label" data-i18n="sourceFileLabel"></p>
 
-      <div class="dropzone" id="dropzone" tabindex="0" role="button">
-        <div class="glyph">[ ▤ ]</div>
-        <div class="primary" data-i18n="dropPrimary"></div>
-        <div class="secondary" data-i18n="dropSecondary"></div>
-        <input type="file" id="fileInput">
+        <div class="dropzone" id="dropzone" tabindex="0" role="button">
+          <div class="glyph">[ ▤ ]</div>
+          <div class="primary" data-i18n="dropPrimary"></div>
+          <div class="secondary" data-i18n="dropSecondary"></div>
+          <input type="file" id="fileInput">
+        </div>
       </div>
 
       <div class="filecard" id="filecard">
@@ -493,37 +515,39 @@
         <div class="row"><span data-i18n="sizeRowLabel"></span><b id="fc-size">—</b></div>
         <div class="row"><span data-i18n="sizeExactRowLabel"></span><b id="fc-size-exact">—</b></div>
         <div class="row"><span data-i18n="mtimeRowLabel"></span><b id="fc-mtime">—</b></div>
-        <button class="swap-btn" id="swapBtn" type="button" data-i18n="swapBtn"></button>
       </div>
 
       <hr class="rule">
 
-      <details class="advanced" id="nameDetails">
-        <summary><span data-i18n="nameSummaryLabel"></span> <span class="summary-val" id="nameSummaryVal">—</span></summary>
-        <label class="field-label" for="nameInput" data-i18n="nameFieldLabel"></label>
-        <input type="text" id="nameInput" disabled>
-        <p class="hint" data-i18n-html="nameHint"></p>
-      </details>
-
-      <details class="advanced" id="attrDetails">
-        <summary><span data-i18n="attrSummaryLabel"></span> <span class="summary-val" id="attrSummaryVal">0x20</span></summary>
-        <div class="attr-grid" id="attrGrid"><!-- injected --></div>
-        <div class="hexline"><span data-i18n="attrHexlineLabel"></span> <span class="val" id="attrHex">0x20</span></div>
-        <p class="hint" data-i18n-html="attrHint"></p>
-      </details>
-
       <details class="advanced">
         <summary data-i18n="advancedSummary"></summary>
-        <div class="advanced-grid">
-          <div>
-            <label class="field-label" for="ageInput" data-i18n="ageFieldLabel"></label>
-            <input type="datetime-local" id="ageInput" step="1" disabled>
-            <p class="hint" data-i18n="ageHint"></p>
-          </div>
-          <div>
-            <label class="field-label" for="sizeInput" data-i18n="sizeFieldLabel"></label>
-            <input type="number" id="sizeInput" min="0" disabled>
-            <p class="hint" data-i18n="sizeHint"></p>
+
+        <div class="subsection">
+          <div class="subsection-title"><span data-i18n="nameSummaryLabel"></span> <span class="summary-val" id="nameSummaryVal">—</span></div>
+          <label class="field-label" for="nameInput" data-i18n="nameFieldLabel"></label>
+          <input type="text" id="nameInput" disabled>
+          <p class="hint" data-i18n-html="nameHint"></p>
+        </div>
+
+        <div class="subsection">
+          <div class="subsection-title"><span data-i18n="attrSummaryLabel"></span> <span class="summary-val" id="attrSummaryVal">0x20</span></div>
+          <div class="attr-grid" id="attrGrid"><!-- injected --></div>
+          <div class="hexline"><span data-i18n="attrHexlineLabel"></span> <span class="val" id="attrHex">0x20</span></div>
+          <p class="hint" data-i18n-html="attrHint"></p>
+        </div>
+
+        <div class="subsection">
+          <div class="advanced-grid">
+            <div>
+              <label class="field-label" for="ageInput" data-i18n="ageFieldLabel"></label>
+              <input type="datetime-local" id="ageInput" step="1" disabled>
+              <p class="hint" data-i18n="ageHint"></p>
+            </div>
+            <div>
+              <label class="field-label" for="sizeInput" data-i18n="sizeFieldLabel"></label>
+              <input type="number" id="sizeInput" min="0" disabled>
+              <p class="hint" data-i18n="sizeHint"></p>
+            </div>
           </div>
         </div>
       </details>
@@ -533,6 +557,7 @@
 
       <details class="advanced">
         <summary data-i18n="howSummary"></summary>
+        <p class="hint" data-i18n-html="heroSub"></p>
         <p class="hint" data-i18n-html="howHint"></p>
       </details>
 
@@ -558,12 +583,12 @@
       sourceFileLabel: "вихідний файл",
       dropPrimary: "Перетягніть файл сюди або натисніть, щоб обрати",
       dropSecondary: "Обробляється локально — нікуди не завантажується",
+      resultDropHint: "Перетягніть інший файл сюди або натисніть, щоб обрати",
       dropAriaLabel: "Перетягніть файл сюди або натисніть, щоб обрати",
       sizeRowLabel: "розмір",
       sizeExactRowLabel: "розмір (точно)",
       exactBytesUnit: "байт",
       mtimeRowLabel: "дата останньої зміни (за даними браузера)",
-      swapBtn: "обрати інший файл",
       nameSummaryLabel: "ім'я файлу для контрольної суми",
       nameFieldLabel: "рядок імені файлу (складова «сума імені»)",
       namePlaceholder: "спочатку додайте файл…",
@@ -614,12 +639,12 @@
       sourceFileLabel: "source file",
       dropPrimary: "Drag a file here, or click to browse",
       dropSecondary: "Read locally — never uploaded anywhere",
+      resultDropHint: "Drop another file here, or click to browse",
       dropAriaLabel: "Drop a file here or click to browse",
       sizeRowLabel: "size",
       sizeExactRowLabel: "size (exact)",
       exactBytesUnit: "bytes",
       mtimeRowLabel: "last modified (as reported by browser)",
-      swapBtn: "choose a different file",
       nameSummaryLabel: "name used in checksum",
       nameFieldLabel: "filename string (the \u201cname-sum\u201d term)",
       namePlaceholder: "drop a file first…",
@@ -825,13 +850,15 @@
 
   // ---------- UI wiring ----------
   const dropzone = document.getElementById("dropzone");
+  const dropSection = document.getElementById("dropSection");
   const fileInput = document.getElementById("fileInput");
+  const fileInputResult = document.getElementById("fileInputResult");
+  const resultDropHint = document.getElementById("resultDropHint");
   const filecard = document.getElementById("filecard");
   const fcName = document.getElementById("fc-name");
   const fcSize = document.getElementById("fc-size");
   const fcSizeExact = document.getElementById("fc-size-exact");
   const fcMtime = document.getElementById("fc-mtime");
-  const swapBtn = document.getElementById("swapBtn");
   const nameInput = document.getElementById("nameInput");
   const ageInput = document.getElementById("ageInput");
   const sizeInput = document.getElementById("sizeInput");
@@ -854,6 +881,7 @@
   let debounceTimer = null;
   let lastComputedFileSize = null;
   let lastComputedChecksum = null;
+  let hasShownResult = false;
 
   // build attribute checkboxes
   ATTR_FLAGS.forEach((flag, idx) => {
@@ -959,7 +987,25 @@
     const f = e.dataTransfer.files && e.dataTransfer.files[0];
     if (f) loadFile(f);
   });
-  swapBtn.addEventListener("click", () => fileInput.click());
+  // once a checksum has been presented, the result panel itself takes over as the dropzone
+  function updateDropzoneVisibility(){
+    dropSection.style.display = hasShownResult ? "none" : "";
+  }
+
+  resultDropHint.addEventListener("click", () => fileInputResult.click());
+  fileInputResult.addEventListener("change", () => {
+    if (fileInputResult.files && fileInputResult.files[0]) loadFile(fileInputResult.files[0]);
+  });
+  ["dragenter", "dragover"].forEach(evt => {
+    result.addEventListener(evt, (e) => { e.preventDefault(); result.classList.add("drag"); });
+  });
+  ["dragleave", "drop"].forEach(evt => {
+    result.addEventListener(evt, (e) => { e.preventDefault(); result.classList.remove("drag"); });
+  });
+  result.addEventListener("drop", (e) => {
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) loadFile(f);
+  });
 
   function scheduleCompute(){
     if (!currentBytes) return;
@@ -995,12 +1041,16 @@
         lastComputedChecksum = checksum;
         citationOut.textContent = currentFile.name + ", " + humanSize(fileSize) + ", " + checksum;
         result.classList.add("show");
+        hasShownResult = true;
+        updateDropzoneVisibility();
         result.scrollIntoView({ behavior: "smooth", block: "nearest" });
       } catch (err) {
         checksumOut.textContent = "error";
         resultStatus.textContent = err.message;
         citationOut.textContent = "—";
         result.classList.add("show", "error");
+        hasShownResult = true;
+        updateDropzoneVisibility();
         result.scrollIntoView({ behavior: "smooth", block: "nearest" });
       } finally {
         computing.classList.remove("show");
@@ -1043,6 +1093,7 @@
   });
 
   updateAttrHex();
+  updateDropzoneVisibility();
   applyLanguage("ua");
 })();
 </script>
